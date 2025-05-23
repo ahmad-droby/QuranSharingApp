@@ -18,7 +18,7 @@ from data_loader import (
     fetch_quran_data_from_api, get_arabic_text_and_timestamps,
     get_translation_text_from_api, download_audio_temporarily, APIError
 )
-from video_generator import generate_quran_video, concatenate_audio_files
+from video_generator import generate_quran_video, concatenate_audio_files_smooth
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 log = logging.getLogger(__name__)
@@ -173,7 +173,7 @@ def process_video_generation(
         # --- 3. Concatenate Audio Segments ---
         job_status[job_id]["detail"] = "Concatenating audio..."
         log.info(f"[Job {job_id}] Starting concatenation of {len(temp_audio_segment_paths)} audio segments.")
-        concatenated_audio_path = concatenate_audio_files(temp_audio_segment_paths, job_id, TEMP_DIR)
+        concatenated_audio_path = concatenate_audio_files_smooth(temp_audio_segment_paths, job_id, TEMP_DIR)
 
         if not concatenated_audio_path:
             raise RuntimeError("Failed to concatenate audio segments.")
