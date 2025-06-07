@@ -2,3 +2,9 @@ output
 temp
 __pycache__
 .pytest_cache
+tq_env
+*.mp4
+output*
+node_modules
+.venv
+.wav
