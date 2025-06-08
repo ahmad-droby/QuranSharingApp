@@ -23,9 +23,27 @@ from data_loader import (
     get_ayah_text_and_words_from_cache_sync
 )
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logging.getLogger("transformers").setLevel(logging.WARNING)
 log = logging.getLogger("transcribe_quran_cli")
+
+# === Proportional Timestamp Distribution Helper ===
+def distribute_time_proportionally(words_list: List[Dict], start_time: float, end_time: float) -> List[Dict]:
+    """Distributes a time range proportionally over words based on their character length."""
+    if not words_list: return []
+    total_chars = sum(len(w.get('text', '')) for w in words_list)
+    if total_chars == 0: return [{**w, 'start_time': start_time, 'end_time': end_time} for w in words_list]
+
+    duration_per_char = (end_time - start_time) / total_chars
+    current_time = start_time
+    for word in words_list:
+        word_len = len(word.get('text', ''))
+        word_duration = word_len * duration_per_char
+        word['start_time'] = current_time
+        word['end_time'] = current_time + word_duration
+        current_time += word_duration
+    return words_list
+
 
 # --- Text Normalization ---
 def normalize_arabic_for_matching(text: str) -> str:
@@ -43,7 +61,7 @@ def normalize_arabic_for_matching(text: str) -> str:
 # --- Auto-Detection Logic ---
 def find_best_quran_segment_match(
     asr_text_normalized: str,
-    min_match_ratio: float,
+    min_match_ratio: float = 0.4, # Lowered for better auto-detection
     surah_hint: Optional[int] = None
 ) -> Optional[Tuple[int, int, int, float]]:
     log.info(f"Auto-detect: Scanning ASR (len {len(asr_text_normalized)} chars). Min ratio: {min_match_ratio}, Surah Hint: {surah_hint}")
@@ -119,9 +137,9 @@ async def generate_timestamps_for_media(
     end_ayah_hint: Optional[int],
     translation_key: Optional[str],
     tafseer_key: Optional[str],
-    min_match_ratio: float,
-    base_model_id: str = "tarteel-ai/whisper-base-ar-quran",
-    lora_model_id: Optional[str] = "KheemP/whisper-base-quran-lora",
+    min_match_ratio: float = 0.4, # Lowered for better auto-detection
+    base_model_id: str = "openai/whisper-large-v2", # Changed to a more general Whisper model for timestamps
+    lora_model_id: Optional[str] = None, # Disabling LoRA as it might not be compatible with large-v2
     force_cache_refresh: bool = False,
     use_gpu_if_available: bool = True,
     hf_token: Optional[str] = None,
@@ -169,9 +187,10 @@ async def generate_timestamps_for_media(
         with open(output_path, 'w', encoding='utf-8') as f: json.dump(final_result, f, indent=2, ensure_ascii=False)
         if temp_audio_file and temp_audio_file.exists(): temp_audio_file.unlink(missing_ok=True)
         return
+ 
 
     # 2. Transcribe Audio using Hugging Face Pipeline
-    asr_words_with_ts: List[Dict] = []
+    asr_segments_with_ts: List[Dict] = []
     full_asr_text = ""
     
     device_str = "cpu"
@@ -268,33 +287,33 @@ async def generate_timestamps_for_media(
             tokenizer=loaded_processor.tokenizer,
             feature_extractor=loaded_processor.feature_extractor,
             device=loaded_model.device,
-            return_timestamps="word",
             chunk_length_s=pipeline_chunk_length_s,
             batch_size=pipeline_batch_size,
-            generation_config=pipeline_gen_config  # Pass the full config object
+            generate_kwargs={"generation_config": pipeline_gen_config} # Pass the full config object via generate_kwargs
         )
         
         log.info(f"Transcribing audio with pipeline (chunk_length_s={pipeline_chunk_length_s}, batch_size={pipeline_batch_size})...")
-        pipeline_output = asr_pipeline(audio_input_np.copy()) 
+        pipeline_output = asr_pipeline(audio_input_np.copy())
+        log.debug(f"Raw pipeline output: {pipeline_output}") # Add this line to inspect the output
         
         full_asr_text = pipeline_output.get("text", "").strip()
         log.info(f"ASR Full Text (from pipeline): {full_asr_text[:200]}...")
         
         if "chunks" in pipeline_output:
             for chunk_data in pipeline_output["chunks"]:
-                asr_words_with_ts.append({
+                asr_segments_with_ts.append({
                     "text": str(chunk_data.get("text", "")).strip(),
                     "start": chunk_data["timestamp"][0],
                     "end": chunk_data["timestamp"][1],
                     "confidence": None
                 })
-            log.info(f"Pipeline extracted {len(asr_words_with_ts)} timestamped words.")
+            log.info(f"Pipeline extracted {len(asr_segments_with_ts)} timestamped words.")
         else:
             log.warning("Pipeline did not return 'chunks' for word timestamps. Word-level timing will be unavailable.")
             processing_errors.append("Pipeline failed to provide word timestamps.")
 
-        if not full_asr_text and asr_words_with_ts:
-            full_asr_text = " ".join(c["text"] for c in asr_words_with_ts if c["text"].strip()).strip()
+        if not full_asr_text and asr_segments_with_ts:
+            full_asr_text = " ".join(c["text"] for c in asr_segments_with_ts if c["text"].strip()).strip()
             log.info(f"Reconstructed ASR text from pipeline chunks: {full_asr_text[:200]}...")
         
         if not full_asr_text:
@@ -336,7 +355,7 @@ async def generate_timestamps_for_media(
         final_result = {
             "error": "Could not determine Quranic range.",
             "full_transcription_from_asr": full_asr_text,
-            "asr_word_timestamps_raw": asr_words_with_ts,
+            "asr_segments_with_ts_raw": asr_segments_with_ts, # Renamed key for clarity
             "details": processing_errors
         }
         with open(output_path, 'w', encoding='utf-8') as f: json.dump(final_result, f, indent=2, ensure_ascii=False)
@@ -379,52 +398,113 @@ async def generate_timestamps_for_media(
             
         result_ayah_data.append(ayah_item)
 
-    # Alignment logic
-    gt_global_idx_to_asr_idx_map: Dict[int, int] = {}
-    if asr_words_with_ts and all_quran_gt_words_structured:
-        norm_asr_words = [normalize_arabic_for_matching(w["text"]) for w in asr_words_with_ts]
-        norm_gt_words = [normalize_arabic_for_matching(w["text"]) for w in all_quran_gt_words_structured]
-        
-        matcher = difflib.SequenceMatcher(None, norm_asr_words, norm_gt_words, autojunk=False)
-        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-            if tag == 'equal':
-                for offset in range(i2 - i1):
-                    asr_w_idx, gt_struct_idx = i1 + offset, j1 + offset
-                    if gt_struct_idx < len(all_quran_gt_words_structured):
-                        gt_global_idx_to_asr_idx_map[all_quran_gt_words_structured[gt_struct_idx]["global_idx"]] = asr_w_idx
-        log.info(f"Word-level Alignment: Matched {len(gt_global_idx_to_asr_idx_map)} GT words to ASR words.")
-    elif full_asr_text and all_quran_gt_words_structured:
-        log.warning("Attempting alignment based on full ASR text as word timestamps were unavailable or problematic.")
-        processing_errors.append("Alignment based on full ASR text; ASR word timings might be absent.")
+    # This is the main ASR text and its segment timestamp
+    # Assuming only one chunk with full audio transcription and its duration
+    main_asr_segment_text = ""
+    main_asr_segment_start = 0.0
+    main_asr_segment_end = 0.0
+
+    if asr_segments_with_ts:
+        # Take the first (and usually only) ASR segment for full audio timing
+        main_asr_segment_text = asr_segments_with_ts[0].get("text", "")
+        main_asr_segment_start = asr_segments_with_ts[0].get("start", 0.0)
+        main_asr_segment_end = asr_segments_with_ts[0].get("end", 0.0)
+        log.info(f"Main ASR segment: '{main_asr_segment_text[:50]}...' [{main_asr_segment_start:.2f}-{main_asr_segment_end:.2f}]")
+    else:
+        log.warning("No ASR segments with timestamps available to distribute.")
+        processing_errors.append("No ASR segment timestamps available for distribution.")
+
+
+    # Reset the gt_global_idx_to_asr_idx_map logic, as we are now doing proportional distribution
+    # The previous alignment logic was for direct word-to-word mapping, which is not happening.
+    
+    # Iterate through ayahs and distribute timestamps to their words
+    current_segment_text_normalized = normalize_arabic_for_matching(main_asr_segment_text)
+    current_segment_char_idx = 0 # To track position in the main ASR segment
 
     for ayah_obj_dict in result_ayah_data:
         gt_words_for_this_ayah = [
-            w for w in all_quran_gt_words_structured 
+            w for w in all_quran_gt_words_structured
             if w["surah_num"] == ayah_obj_dict["surah"] and w["ayah_num"] == ayah_obj_dict["ayah_number"]
         ]
-        for gt_word_info in gt_words_for_this_ayah:
-            ts_word: Dict[str, Any] = {
-                "word_quranic": gt_word_info["text"],
-                "char_offset_quranic_start": gt_word_info["char_offset_start"],
-                "char_offset_quranic_end": gt_word_info["char_offset_end"],
-                "word_asr": None, "start_time": None, "end_time": None, "asr_confidence": None,
-                "match_type": "no_asr_word_data_for_timing"
-            }
-            if asr_words_with_ts:
-                asr_match_idx = gt_global_idx_to_asr_idx_map.get(gt_word_info["global_idx"])
-                if asr_match_idx is not None and asr_match_idx < len(asr_words_with_ts):
-                    asr_w_data = asr_words_with_ts[asr_match_idx]
-                    ts_word.update({
-                        "word_asr": asr_w_data["text"], "start_time": asr_w_data["start"],
-                        "end_time": asr_w_data["end"], "asr_confidence": asr_w_data.get("confidence")
-                    })
-                    if gt_word_info["text"] == asr_w_data["text"]: ts_word["match_type"] = "exact_raw"
-                    elif normalize_arabic_for_matching(gt_word_info["text"]) == normalize_arabic_for_matching(asr_w_data["text"]): ts_word["match_type"] = "exact_normalized"
-                    else: ts_word["match_type"] = "check_logic_mismatch"
-                else:
-                    ts_word["match_type"] = "no_match_in_alignment"
-            ayah_obj_dict["word_timestamps"].append(ts_word)
+        
+        # Concatenate normalized GT words for sequence matching
+        ayah_gt_normalized_text = " ".join([normalize_arabic_for_matching(w["text"]) for w in gt_words_for_this_ayah])
+
+        # Find where this ayah's GT text matches in the overall ASR segment text
+        s = difflib.SequenceMatcher(None, current_segment_text_normalized, ayah_gt_normalized_text, autojunk=False)
+        match = s.find_longest_match(0, len(current_segment_text_normalized), 0, len(ayah_gt_normalized_text))
+
+        ayah_match_start_char = current_segment_char_idx # Default start of match for this ayah from overall segment
+        ayah_match_end_char = current_segment_char_idx + len(ayah_gt_normalized_text) # Default end of match
+
+        # Calculate the ratio of the matched segment to the current ayah's GT text
+        # If the match size is very small compared to the ayah text, it's not a good match
+        match_ratio = 0.0
+        if ayah_gt_normalized_text and match.size > 0:
+            s_match_segment = difflib.SequenceMatcher(None, current_segment_text_normalized[match.a : match.a + match.size], ayah_gt_normalized_text[match.b : match.b + match.size])
+            match_ratio = s_match_segment.ratio()
+
+        if match.size > 0 and match_ratio > 0.5: # Use a threshold for confidence
+            # If a good match is found, refine start and end characters within the ASR segment
+            ayah_match_start_char = match.a
+            ayah_match_end_char = match.a + match.size # This is start char in asr_text
+
+            # Update current_segment_char_idx for the next iteration (next ayah)
+            current_segment_char_idx = ayah_match_end_char + 1 # Move past this ayah's match for next search
             
+        # Calculate time for this ayah's segment in ASR
+        # This is where we need to be careful with overall segment time
+        
+        # Calculate time boundaries for the current portion of ASR text that matches the Ayah
+        effective_segment_duration = main_asr_segment_end - main_asr_segment_start
+        
+        # Character-based start/end of the current ayah's ASR match within the full ASR text
+        # This assumes a linear distribution of time per character across the whole ASR segment.
+        # This is an approximation.
+        if len(current_segment_text_normalized) > 0:
+            char_duration = effective_segment_duration / len(current_segment_text_normalized)
+            ayah_segment_start_time = main_asr_segment_start + (ayah_match_start_char * char_duration)
+            ayah_segment_end_time = main_asr_segment_start + (ayah_match_end_char * char_duration)
+        else:
+            ayah_segment_start_time = main_asr_segment_start
+            ayah_segment_end_time = main_asr_segment_end
+            
+        # Distribute time among words within this Ayah
+        timestamped_gt_words = distribute_time_proportionally(
+            [{**w, 'text': w["text"]} for w in gt_words_for_this_ayah], # Use uthmani text (already in 'text' key) for proportional distribution
+            ayah_segment_start_time,
+            ayah_segment_end_time
+        )
+        
+        # Populate word_timestamps with the now timestamped GT words
+        ayah_obj_dict["word_timestamps"] = []
+        for ts_word_data in timestamped_gt_words:
+            # Reconstruct ts_word with original Quranic text and new timestamps
+            original_word_data = next((w for w in gt_words_for_this_ayah if w["text"] == ts_word_data["text"]), None)
+            if original_word_data:
+                ayah_obj_dict["word_timestamps"].append({
+                    "word_quranic": original_word_data["text"],
+                    "char_offset_quranic_start": original_word_data["char_offset_start"],
+                    "char_offset_quranic_end": original_word_data["char_offset_end"],
+                    "word_asr": ts_word_data.get("text", ""), # Use the text used for ASR matching as word_asr
+                    "start_time": ts_word_data["start_time"],
+                    "end_time": ts_word_data["end_time"],
+                    "asr_confidence": None, # Cannot get word-level confidence from segment-level ASR
+                    "match_type": "proportional_distribution"
+                })
+            else:
+                # Fallback if original_word_data not found (shouldn't happen with correct logic)
+                ayah_obj_dict["word_timestamps"].append({
+                    "word_quranic": ts_word_data["text"], # Fallback
+                    "char_offset_quranic_start": None,
+                    "char_offset_quranic_end": None,
+                    "word_asr": ts_word_data.get("text", ""),
+                    "start_time": ts_word_data["start_time"],
+                    "end_time": ts_word_data["end_time"],
+                    "asr_confidence": None,
+                    "match_type": "proportional_distribution_fallback"
+                })
     # 5. Final Output
     final_output_data = {
         "source_media_file": str(media_path.name),
@@ -436,9 +516,9 @@ async def generate_timestamps_for_media(
         "ayah_data": result_ayah_data,
         "processing_summary": {
             "total_ayahs_processed": len(result_ayah_data),
-            "asr_timestamped_segments_count": len(asr_words_with_ts),
+            "asr_timestamped_segments_count": len(asr_segments_with_ts),
             "gt_words_count_in_range": len(all_quran_gt_words_structured),
-            "aligned_words_count": len(gt_global_idx_to_asr_idx_map) if asr_words_with_ts and all_quran_gt_words_structured else 0,
+            "approx_word_timestamps_generated_count": sum(len(ayah["word_timestamps"]) for ayah in result_ayah_data), # Count of words with estimated timestamps
             "errors_and_notes": processing_errors
         }
     }
@@ -465,11 +545,11 @@ async def main():
                         choices=list(TRANSLATION_INFO.keys()), help="Key of the translation to include.")
     parser.add_argument("--tafseer_key", "-f", type=str, default=None,
                         choices=list(TAFSEER_INFO.keys()), help="Key of the Tafseer to include.")
-    parser.add_argument("--min_match_ratio", type=float, default=0.6,
+    parser.add_argument("--min_match_ratio", type=float, default=0.4, # Lowered default
                         help="Minimum similarity ratio for auto-detection (0.1-1.0).")
-    parser.add_argument("--base_model_id", type=str, default="tarteel-ai/whisper-base-ar-quran",
+    parser.add_argument("--base_model_id", type=str, default="openai/whisper-large-v2",
                         help="Base Whisper model ID from Hugging Face.")
-    parser.add_argument("--lora_model_id", type=str, default="KheemP/whisper-base-quran-lora",
+    parser.add_argument("--lora_model_id", type=str, default=None, # Default to None to disable it
                         help="LoRA adapter model ID. Set to 'None' or empty to disable LoRA.")
     parser.add_argument("--force_cache_refresh", action="store_true",
                         help="Force fetching Quran text/translation/tafseer from API, ignoring cache.")

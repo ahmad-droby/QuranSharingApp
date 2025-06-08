@@ -1,162 +1,93 @@
-import os
-import json
-import re
-import requests
-from pydub import AudioSegment
-import moviepy as mp
-from typing import List, Dict, Any, Optional, Tuple
-import whisper
+import argparse
+import subprocess
+from pathlib import Path
+import sys
 
-class QuranVideoGenerator:
-    def __init__(self, video_path: str, output_path: str):
-        self.video_path = video_path
-        self.output_path = output_path
-        self.video = mp.VideoFileClip(video_path)
-        
-    def add_quran_text(self, quran_text: List[Dict[str, Any]]):
-        # Add text to video
-        final_video = self.video.copy()
-        
-        for i, verse in enumerate(quran_text):
-            start_time = verse['start_time']
-            end_time = verse['end_time']
-            text = verse['text']
-            
-            # Add text overlay
-            txt_clip = mp.TextClip(text, fontsize=70, color='white').set_position('center').set_duration(end_time - start_time)
-            txt_clip = txt_clip.set_start(start_time)
-            
-            final_video = mp.CompositeVideoClip([final_video, txt_clip])
-            
-        final_video.write_videofile(self.output_path)
-        
-    def extract_audio(self) -> str:
-        # Extract audio from video
-        audio_path = os.path.splitext(self.video_path)[0] + '_audio.mp3'
-        audio = AudioSegment.from_file(self.video_path, format=os.path.splitext(self.video_path)[1])
-        audio.export(audio_path, format='mp3')
-        return audio_path
+def run_transcription(video_path: Path, output_dir: Path) -> Path:
+    """Runs transcribe_quran.py to generate a JSON transcript."""
+    # transcribe_quran.py expects a single output_file path, not separate dir and name.
+    # It also handles surah/ayah hints as separate arguments.
+    
+    transcript_output_path = output_dir / f"output_transcript_{video_path.stem}.json"
 
-class QuranTranscriber:
-    def __init__(self, audio_path: str):
-        self.audio_path = audio_path
-        
-    def transcribe(self) -> List[Dict[str, Any]]:
-        # Initialize Whisper
-        model = whisper.load_model("small")
-        
-        # Transcribe audio
-        result = model.transcribe(self.audio_path, language="ar")
-        
-        # Process segments
-        verses = []
-        for segment in result["segments"]:
-            start_time = segment["start"]
-            end_time = segment["end"]
-            text = segment["text"]
-            
-            # Convert seconds to moviepy time format (seconds + milliseconds)
-            start_time_moviepy = int(start_time) + (start_time - int(start_time)) 
-            end_time_moviepy = int(end_time) + (end_time - int(end_time))
-            
-            verses.append({
-                'start_time': start_time_moviepy,
-                'end_time': end_time_moviepy,
-                'text': text
-            })
-            
-        # Save transcription to file
-        with open('transcription.json', 'w', encoding='utf-8') as f:
-            json.dump(verses, f, indent=2, ensure_ascii=False)
-            
-        return verses
+    # Assuming transcribe_quran.py is in the 'transcribe_quran' directory relative to the current script
+    transcribe_script_path = Path("transcribe_quran/transcribe_quran.py")
+    
+    command = [
+        sys.executable, str(transcribe_script_path),
+        str(video_path),
+        "--output_file", str(transcript_output_path), # Pass the full output file path
+        # Default hints for testing based on previous runs
+        "--surah_hint", "23",
+        "--start_ayah_hint", "1",
+        "--end_ayah_hint", "7"
+    ]
+    
+    print(f"Running transcription command: {' '.join(str(c) for c in command)}") # Convert all command parts to string for printing
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        print(f"Transcription successful. Transcript saved to: {transcript_output_path}")
+        return transcript_output_path
+    except subprocess.CalledProcessError as e:
+        print(f"Transcription failed with error: {e}")
+        print(f"Stdout: {e.stdout}")
+        print(f"Stderr: {e.stderr}")
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"Error: transcribe_quran.py not found at {transcribe_script_path}. Ensure the path is correct.")
+        sys.exit(1)
 
-class QuranAPI:
-    def __init__(self):
-        self.verse_pattern = re.compile(r"(?:سورة|سورَة|سوره)\s*(\d+)[،,\s]+(?:آية|آيه|اية|آیة)\s*(\d+)")
-        self.base_url = "https://api.quran.com/api/v4"
-        
-    def get_quran_text(self, surah: int, ayah: int) -> Dict[str, Any]:
-        """Fetch Quran text with metadata"""
-        try:
-            response = requests.get(
-                f"{self.base_url}/verses/by_key/{surah}:{ayah}",
-                params={"language": "ar", "fields": "text_uthmani"}
-            )
-            response.raise_for_status()
-            data = response.json()
-            return {
-                'text': data['verse']['text_uthmani'],
-                'surah': surah,
-                'ayah': ayah,
-                'surah_name': self._get_surah_name(surah)
-            }
-        except Exception as e:
-            print(f"Error fetching verse {surah}:{ayah}: {str(e)}")
-            return None
-            
-    def _get_surah_name(self, surah_num: int) -> str:
-        try:
-            response = requests.get(f"{self.base_url}/chapters/{surah_num}")
-            response.raise_for_status()
-            return response.json()['chapter']['name_arabic']
-        except Exception:
-            return f"سورة {surah_num}"
-            
-    def detect_verse(self, text: str) -> Optional[Tuple[int, int]]:
-        """Detect surah and ayah numbers from transcribed text"""
-        match = self.verse_pattern.search(text)
-        if match:
-            return int(match.group(1)), int(match.group(2))
-        return None
+def run_video_processor(video_path: Path, transcript_path: Path, output_path: Path, min_display_duration_s: float):
+    """Runs quran_video_processor.py to overlay text on video."""
+    
+    processor_script_path = Path("quran_video_processor.py")
+    
+    command = [
+        sys.executable, str(processor_script_path),
+        str(video_path),
+        str(transcript_path),
+        "--output_file", str(output_path),
+        "--min_display_duration_s", str(min_display_duration_s)
+    ]
 
-# Example usage
+    print(f"Running video processing command: {' '.join(str(c) for c in command)}") # Convert all command parts to string for printing
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        print(f"Video processing successful. Output saved to: {output_path}")
+    except subprocess.CalledProcessError as e:
+        print(f"Video processing failed with error: {e}")
+        print(f"Stdout: {e.stdout}")
+        print(f"Stderr: {e.stderr}")
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"Error: quran_video_processor.py not found at {processor_script_path}. Ensure the path is correct.")
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate Quran video with subtitles from an audio/video input.")
+    parser.add_argument("input_video", type=Path, help="Path to the input video file.")
+    parser.add_argument("--output_file", type=Path, default=None,
+                        help="Path for the output video file. Defaults to input_video_stem_with_text.mp4 in the same directory.")
+    parser.add_argument("--output_dir", type=Path, default=Path("transcribe_quran/output_cli"),
+                        help="Directory to save transcription outputs (JSON). Defaults to 'transcribe_quran/output_cli'.")
+    parser.add_argument("--min_display_duration_s", type=float, default=2.0,
+                        help="Minimum duration (in seconds) for each text segment in the video. Words will be grouped if their combined duration is less than this.")
+    
+    args = parser.parse_args()
+
+    # Ensure output directory exists for transcript
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not args.output_file:
+        args.output_file = args.input_video.parent / f"{args.input_video.stem}_with_text.mp4"
+
+    # Step 1: Run transcription
+    transcript_path = run_transcription(args.input_video, args.output_dir)
+
+    # Step 2: Run video processing
+    run_video_processor(args.input_video, transcript_path, args.output_file, args.min_display_duration_s)
+
+    print("\nFull Quran video generation process completed.")
+
 if __name__ == "__main__":
-    video_path = "input.mp4"
-    output_path = "output.mp4"
-    
-    generator = QuranVideoGenerator(video_path, output_path)
-    audio_path = generator.extract_audio()
-    
-    transcriber = QuranTranscriber(audio_path)
-    transcription = transcriber.transcribe()
-    
-    # Match transcription with Quran text from API
-    quran_api = QuranAPI()
-    verses_with_text = []
-    
-    # Enhanced verse matching
-    quran_api = QuranAPI()
-    verses_with_text = []
-    current_surah, current_ayah = 1, 1  # Default starting point
-    
-    for verse in transcription:
-        # Try to detect verse numbers from transcription
-        detected = quran_api.detect_verse(verse['text'])
-        if detected:
-            current_surah, current_ayah = detected
-            
-        # Get Quran text with metadata
-        quran_verse = quran_api.get_quran_text(current_surah, current_ayah)
-        if quran_verse:
-            verses_with_text.append({
-                'start_time': verse['start_time'],
-                'end_time': verse['end_time'],
-                'text': quran_verse['text'],
-                'surah': quran_verse['surah'],
-                'ayah': quran_verse['ayah'],
-                'surah_name': quran_verse['surah_name']
-            })
-            current_ayah += 1  # Move to next ayah
-        else:
-            # Fallback to transcribed text if API fails
-            verses_with_text.append({
-                'start_time': verse['start_time'],
-                'end_time': verse['end_time'],
-                'text': verse['text'],
-                'surah': current_surah,
-                'ayah': current_ayah,
-                'surah_name': f"سورة {current_surah}"
-            })
-    
-    generator.add_quran_text(verses_with_text)
+    main()
