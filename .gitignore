@@ -8,3 +8,4 @@ output*
 node_modules
 .venv
 .wav
+*.db
