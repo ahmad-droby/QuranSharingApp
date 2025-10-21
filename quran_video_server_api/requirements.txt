@@ -1,12 +1,35 @@
-fastapi
-uvicorn[standard]
-moviepy
+# Core Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+
+# Video & Audio Processing
+moviepy>=1.0.3
 ffprobe
 audioop-lts
 pydub
 PyAudio
+
+# Arabic Text Processing
 arabic_reshaper
 python-bidi
-requests
-pytest
-httpx # For TestClient
+
+# HTTP Requests
+requests>=2.31.0
+httpx>=0.25.0
+
+# Database
+sqlalchemy>=2.0.0
+
+# Configuration
+python-dotenv>=1.0.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+
+# Code Quality
+flake8>=6.1.0
+mypy>=1.7.0
+black>=23.11.0
