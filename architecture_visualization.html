@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quran Video Generator - Architecture Visualization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            animation: fadeIn 1s ease-in;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            animation: slideUp 0.6s ease-out;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 12px rgba(0,0,0,0.2);
+        }
+
+        .stat-card .number {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .label {
+            color: #666;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .architecture-layers {
+            margin-bottom: 40px;
+        }
+
+        .layer {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            animation: slideIn 0.8s ease-out;
+            transition: all 0.3s ease;
+        }
+
+        .layer:hover {
+            box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+        }
+
+        .layer-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+
+        .layer-indicator {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 1.5em;
+            margin-right: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .layer-title {
+            flex: 1;
+        }
+
+        .layer-title h2 {
+            font-size: 1.8em;
+            margin-bottom: 5px;
+        }
+
+        .layer-title p {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .components-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+        }
+
+        .component {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .component h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+
+        .component p {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+            font-style: italic;
+        }
+
+        .component ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .component li {
+            padding: 5px 0;
+            color: #555;
+            font-size: 0.9em;
+        }
+
+        .component li:before {
+            content: "▹ ";
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .data-flow {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 40px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .data-flow h2 {
+            font-size: 2em;
+            margin-bottom: 30px;
+            text-align: center;
+            color: #667eea;
+        }
+
+        .flow-step {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+            position: relative;
+        }
+
+        .flow-step:not(:last-child):after {
+            content: "⬇";
+            position: absolute;
+            left: 30px;
+            bottom: -25px;
+            font-size: 2em;
+            color: #667eea;
+        }
+
+        .flow-number {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.5em;
+            margin-right: 20px;
+            flex-shrink: 0;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .flow-content {
+            flex: 1;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .flow-content h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .flow-content .action {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .flow-content .substeps {
+            list-style: none;
+            padding-left: 20px;
+            margin-top: 10px;
+        }
+
+        .flow-content .substeps li {
+            padding: 4px 0;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .flow-content .substeps li:before {
+            content: "→ ";
+            color: #667eea;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin-bottom: 40px;
+        }
+
+        .feature-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            transition: transform 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateX(5px);
+        }
+
+        .feature-card:before {
+            content: "✓";
+            width: 30px;
+            height: 30px;
+            background: #4CAF50;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .mermaid-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 40px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .mermaid-section h2 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-30px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .toggle-icon {
+            transition: transform 0.3s ease;
+        }
+
+        .layer.collapsed .components-grid {
+            display: none;
+        }
+
+        .layer.collapsed .toggle-icon {
+            transform: rotate(-90deg);
+        }
+
+        .footer {
+            text-align: center;
+            color: white;
+            padding: 20px;
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🕌 Quran Video Generator API</h1>
+            <p>Complete Architecture Visualization</p>
+        </div>
+
+        <div class="stats-grid" id="stats"></div>
+
+        <div class="mermaid-section">
+            <h2>📊 High-Level Architecture Diagram</h2>
+            <pre style="background: #f8f9fa; padding: 20px; border-radius: 8px; overflow-x: auto;">
+┌─────────────────────────────────────────────────────────────┐
+│                    CLIENT APPLICATION                        │
+│                  (Browser / Mobile / Desktop)                │
+└───────────────────────┬─────────────────────────────────────┘
+                        │ HTTP/REST
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│               PRESENTATION LAYER (FastAPI)                   │
+│  ┌──────────────┬────────────────┬──────────────────────┐  │
+│  │ GET /        │ POST /generate │ GET /jobs/{id}/status│  │
+│  │ (Health)     │ _video         │ (Status Check)       │  │
+│  └──────────────┴────────────────┴──────────────────────┘  │
+│           │                                                  │
+│           ▼                                                  │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │         Pydantic Validation Models                   │   │
+│  │  (VideoRequest, Response Schemas)                    │   │
+│  └─────────────────────────────────────────────────────┘   │
+└───────────────────────┬─────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│              BUSINESS LOGIC LAYER                            │
+│  ┌─────────────┬──────────────┬──────────────────────────┐ │
+│  │ Validators  │ Video        │ Data Loader             │  │
+│  │ (Input      │ Generator    │ (API Integration)       │  │
+│  │ Validation) │ (MoviePy)    │                         │  │
+│  └─────────────┴──────────────┴──────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │         Audio Processor (Pydub)                       │  │
+│  │  (Concatenation, Crossfade, Trimming)                 │  │
+│  └──────────────────────────────────────────────────────┘  │
+└───────────────────────┬─────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│              DATA ACCESS LAYER                               │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │            Repository (JobRepository)                  │ │
+│  │  create_job() | get_job() | update_status()          │ │
+│  │  mark_completed() | mark_failed() | delete_job()     │ │
+│  └─────────────────────┬─────────────────────────────────┘ │
+│                        │                                     │
+│                        ▼                                     │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │         SQLAlchemy ORM Models                          │ │
+│  │  VideoJob | JobStatus Enum                            │ │
+│  └───────────────────────────────────────────────────────┘ │
+└───────────────────────┬─────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│              INFRASTRUCTURE LAYER                            │
+│  ┌──────────────┬───────────────┬──────────────────────┐   │
+│  │   Database   │ Configuration │ Exception Handling   │   │
+│  │   (SQLite/   │ (.env vars,   │ (Custom exceptions,  │   │
+│  │  PostgreSQL) │  dataclasses) │  error codes)        │   │
+│  └──────────────┴───────────────┴──────────────────────┘   │
+└───────────────────────┬─────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│              EXTERNAL SERVICES                               │
+│  ┌──────────────┬────────────────┬───────────────────────┐ │
+│  │ Quran.com    │ AlQuran.Cloud  │ Audio CDN             │ │
+│  │ API          │ API            │ (verses.quran.com)    │ │
+│  │ (Text,       │ (Translations) │ (MP3 files)           │ │
+│  │  Timestamps) │                │                       │ │
+│  └──────────────┴────────────────┴───────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+            </pre>
+        </div>
+
+        <div class="architecture-layers" id="layers"></div>
+
+        <div class="data-flow" id="dataFlow"></div>
+
+        <div style="background: white; border-radius: 12px; padding: 30px; margin-bottom: 40px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <h2 style="text-align: center; color: #667eea; margin-bottom: 30px;">✨ Key Features</h2>
+            <div class="features-grid" id="features"></div>
+        </div>
+
+        <div class="footer">
+            <p>🤖 Generated with Claude Code | Architecture Visualization</p>
+            <p style="opacity: 0.8; margin-top: 10px;">Total Lines of Code: 3,195 | Test Coverage: 90%+</p>
+        </div>
+    </div>
+
+    <script>
+        // Load and display the architecture data
+        fetch('architecture_data.json')
+            .then(response => response.json())
+            .then(data => {
+                renderStats(data.statistics);
+                renderLayers(data.layers);
+                renderDataFlow(data.data_flow);
+                renderFeatures(data.key_features);
+            })
+            .catch(error => console.error('Error loading data:', error));
+
+        function renderStats(stats) {
+            const statsContainer = document.getElementById('stats');
+            const statCards = [
+                { number: stats.api_endpoints, label: 'API Endpoints' },
+                { number: stats.supported_reciters, label: 'Reciters' },
+                { number: stats.supported_translations, label: 'Translations' },
+                { number: stats.surahs, label: 'Surahs' },
+                { number: stats.total_ayahs.toLocaleString(), label: 'Total Ayahs' },
+                { number: stats.test_coverage, label: 'Test Coverage' }
+            ];
+
+            statsContainer.innerHTML = statCards.map(stat => `
+                <div class="stat-card">
+                    <div class="number">${stat.number}</div>
+                    <div class="label">${stat.label}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderLayers(layers) {
+            const layersContainer = document.getElementById('layers');
+            const colors = ['#4CAF50', '#2196F3', '#FF9800', '#9C27B0', '#607D8B'];
+
+            layersContainer.innerHTML = layers.map((layer, index) => `
+                <div class="layer" id="layer-${index}">
+                    <div class="layer-header" onclick="toggleLayer(${index})">
+                        <div class="layer-indicator" style="background: ${colors[index]};">
+                            ${index + 1}
+                        </div>
+                        <div class="layer-title">
+                            <h2>${layer.name}</h2>
+                            <p>${layer.components.length} components</p>
+                        </div>
+                        <span class="toggle-icon" style="font-size: 1.5em; margin-left: 10px;">▼</span>
+                    </div>
+                    <div class="components-grid">
+                        ${layer.components.map(comp => renderComponent(comp)).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderComponent(component) {
+            let items = '';
+            if (component.endpoints) {
+                items = component.endpoints.map(e => `<li>${e}</li>`).join('');
+            } else if (component.models) {
+                items = component.models.map(m => `<li>${m}</li>`).join('');
+            } else if (component.features) {
+                items = component.features.map(f => `<li>${f}</li>`).join('');
+            } else if (component.validations) {
+                items = component.validations.map(v => `<li>${v}</li>`).join('');
+            } else if (component.processes) {
+                items = component.processes.map(p => `<li>${p}</li>`).join('');
+            } else if (component.functions) {
+                items = component.functions.map(f => `<li>${f}</li>`).join('');
+            } else if (component.operations) {
+                items = component.operations.map(o => `<li>${o}</li>`).join('');
+            } else if (component.entities) {
+                items = component.entities.map(e => `<li>${e}</li>`).join('');
+            } else if (component.details) {
+                items = component.details.map(d => `<li>${d}</li>`).join('');
+            } else if (component.settings) {
+                items = component.settings.map(s => `<li>${s}</li>`).join('');
+            } else if (component.types) {
+                items = component.types.map(t => `<li>${t}</li>`).join('');
+            }
+
+            return `
+                <div class="component">
+                    <h3>${component.name}</h3>
+                    <p>${component.description}</p>
+                    <ul>${items}</ul>
+                </div>
+            `;
+        }
+
+        function renderDataFlow(flow) {
+            const flowContainer = document.getElementById('dataFlow');
+            flowContainer.innerHTML = `
+                <h2>🔄 Request Processing Flow</h2>
+                ${flow.map(step => `
+                    <div class="flow-step">
+                        <div class="flow-number">${step.step}</div>
+                        <div class="flow-content">
+                            <h3>${step.name}</h3>
+                            <div class="action">${step.action}</div>
+                            ${step.data ? `<div style="color: #666; font-size: 0.9em;">Data: ${step.data}</div>` : ''}
+                            ${step.checks ? `<div style="margin-top: 8px;">Checks: ${step.checks.join(', ')}</div>` : ''}
+                            ${step.result ? `<div style="color: #4CAF50; margin-top: 8px;">✓ ${step.result}</div>` : ''}
+                            ${step.substeps ? `<ul class="substeps">${step.substeps.map(s => `<li>${s}</li>`).join('')}</ul>` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        function renderFeatures(features) {
+            const featuresContainer = document.getElementById('features');
+            featuresContainer.innerHTML = features.map(feature => `
+                <div class="feature-card">${feature}</div>
+            `).join('');
+        }
+
+        function toggleLayer(index) {
+            const layer = document.getElementById(`layer-${index}`);
+            layer.classList.toggle('collapsed');
+        }
+    </script>
+</body>
+</html>
