@@ -703,12 +703,10 @@
     // ============================================================================
 
     // CORS proxies for audio - these support binary/audio files
-    // To use your own Cloudflare Worker proxy, deploy workers/audio-proxy.js
-    // and add: 'https://YOUR-WORKER.workers.dev/?url='
     const CORS_PROXIES = [
-      'https://api.allorigins.win/raw?url=',
-      'https://crossorigin.me/',
-      'https://yacdn.org/proxy/',
+      'https://corsproxy.org/?',
+      'https://thingproxy.freeboard.io/fetch/',
+      'https://api.codetabs.com/v1/proxy?quest=',
     ];
 
     // Preload audio for an ayah
