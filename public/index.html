@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ayah Canvas - Quran Post Generator</title>
 
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+
   <!-- React and Babel -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -1209,7 +1212,15 @@
         }
 
         console.log('Fetching space images from NASA APOD...');
-        const response = await fetch(`${NASA_APOD_URL}&count=${count}&thumbs=true`);
+        // Add timeout to prevent long waits on slow/unavailable API
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+        const response = await fetch(`${NASA_APOD_URL}&count=${count}&thumbs=true`, {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
         if (!response.ok) throw new Error('NASA API error');
 
         const data = await response.json();
@@ -1232,7 +1243,14 @@
 
         return images;
       } catch (e) {
-        console.warn('Failed to fetch space images:', e);
+        console.warn('Failed to fetch space images:', e.name === 'AbortError' ? 'Request timed out' : e.message);
+        // Try to return expired cache as fallback
+        const cached = localStorage.getItem(`${BG_IMAGES_CACHE_KEY}_space`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          console.log('Using expired cache as fallback');
+          return parsed.images;
+        }
         return [];
       }
     };
