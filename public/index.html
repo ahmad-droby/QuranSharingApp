@@ -437,6 +437,13 @@
       { id: 'ar.abdurrahmaansudais', name: 'Abdurrahmaan As-Sudais', arabicName: 'عبدالرحمن السديس', quranComId: 2 },
       { id: 'ar.husary', name: 'Mahmoud Khalil Al-Husary', arabicName: 'محمود خليل الحصري', quranComId: 5 },
       { id: 'ar.minshawi', name: 'Mohamed Siddiq El-Minshawi', arabicName: 'محمد صديق المنشاوي', quranComId: 7 },
+      { id: 'ar.mahermuaiqly', name: 'Maher Al-Muaiqly', arabicName: 'ماهر المعيقلي', quranComId: 9 },
+      { id: 'ar.saaborhim', name: 'Saud Al-Shuraim', arabicName: 'سعود الشريم', quranComId: 4 },
+      { id: 'ar.ahmedajamy', name: 'Ahmed ibn Ali al-Ajamy', arabicName: 'أحمد بن علي العجمي', quranComId: 10 },
+      { id: 'ar.muhammadayyoub', name: 'Muhammad Ayyub', arabicName: 'محمد أيوب', quranComId: 8 },
+      { id: 'ar.muhammadjibreel', name: 'Muhammad Jibreel', arabicName: 'محمد جبريل', quranComId: 11 },
+      { id: 'ar.haborhim', name: 'Hani Ar-Rifai', arabicName: 'هاني الرفاعي', quranComId: 12 },
+      { id: 'ar.ibrahimakhbar', name: 'Ibrahim Al-Akhdar', arabicName: 'إبراهيم الأخضر', quranComId: 3 },
     ];
 
     // Quran.com API for precise audio timing data
@@ -1188,71 +1195,38 @@
     // BACKGROUND IMAGE API SERVICE
     // ============================================================================
 
-    // NASA APOD API for space images (free, no auth required with DEMO_KEY)
-    const NASA_API_KEY = 'DEMO_KEY'; // Rate limited but works for demo
-    const NASA_APOD_URL = `https://api.nasa.gov/planetary/apod?api_key=${NASA_API_KEY}`;
-
     // Picsum for nature/landscape images (completely free, no auth)
     const PICSUM_URL = 'https://picsum.photos';
+
+    // Curated space/galaxy images from Unsplash (no API key needed, using direct image URLs)
+    // These are high-quality, royalty-free space images
+    const SPACE_IMAGES = [
+      { id: 'space_1', name: 'Galaxy', url: 'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=1080&q=80' },
+      { id: 'space_2', name: 'Nebula', url: 'https://images.unsplash.com/photo-1507400492013-162706c8c05e?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1507400492013-162706c8c05e?w=1080&q=80' },
+      { id: 'space_3', name: 'Stars', url: 'https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=1080&q=80' },
+      { id: 'space_4', name: 'Milky Way', url: 'https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?w=1080&q=80' },
+      { id: 'space_5', name: 'Deep Space', url: 'https://images.unsplash.com/photo-1465101162946-4377e57745c3?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1465101162946-4377e57745c3?w=1080&q=80' },
+      { id: 'space_6', name: 'Cosmos', url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1080&q=80' },
+      { id: 'space_7', name: 'Aurora', url: 'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1080&q=80' },
+      { id: 'space_8', name: 'Night Sky', url: 'https://images.unsplash.com/photo-1475274047050-1d0c0975c63e?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1475274047050-1d0c0975c63e?w=1080&q=80' },
+      { id: 'space_9', name: 'Star Field', url: 'https://images.unsplash.com/photo-1506318137071-a8e063b4bec0?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1506318137071-a8e063b4bec0?w=1080&q=80' },
+      { id: 'space_10', name: 'Universe', url: 'https://images.unsplash.com/photo-1444703686981-a3abbc4d4fe3?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1444703686981-a3abbc4d4fe3?w=1080&q=80' },
+      { id: 'space_11', name: 'Stellar', url: 'https://images.unsplash.com/photo-1516339901601-2e1b62dc0c45?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1516339901601-2e1b62dc0c45?w=1080&q=80' },
+      { id: 'space_12', name: 'Celestial', url: 'https://images.unsplash.com/photo-1543722530-d2c3201371e7?w=800&q=80', hdurl: 'https://images.unsplash.com/photo-1543722530-d2c3201371e7?w=1080&q=80' },
+    ];
 
     // Cache for fetched background images
     const BG_IMAGES_CACHE_KEY = 'bg_images_cache';
 
     const fetchSpaceImages = async (count = 8) => {
-      try {
-        // Check cache first
-        const cached = localStorage.getItem(`${BG_IMAGES_CACHE_KEY}_space`);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          // Cache for 1 hour
-          if (Date.now() - parsed.timestamp < 3600000) {
-            console.log('Using cached space images');
-            return parsed.images;
-          }
-        }
-
-        console.log('Fetching space images from NASA APOD...');
-        // Add timeout to prevent long waits on slow/unavailable API
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
-        const response = await fetch(`${NASA_APOD_URL}&count=${count}&thumbs=true`, {
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (!response.ok) throw new Error('NASA API error');
-
-        const data = await response.json();
-        const images = data
-          .filter(item => item.media_type === 'image' && item.url)
-          .map((item, idx) => ({
-            id: `space_${idx}_${Date.now()}`,
-            name: item.title?.substring(0, 20) || 'Space',
-            url: item.url,
-            hdurl: item.hdurl || item.url,
-            type: 'api',
-            source: 'NASA APOD'
-          }));
-
-        // Cache the results
-        localStorage.setItem(`${BG_IMAGES_CACHE_KEY}_space`, JSON.stringify({
-          timestamp: Date.now(),
-          images
-        }));
-
-        return images;
-      } catch (e) {
-        console.warn('Failed to fetch space images:', e.name === 'AbortError' ? 'Request timed out' : e.message);
-        // Try to return expired cache as fallback
-        const cached = localStorage.getItem(`${BG_IMAGES_CACHE_KEY}_space`);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          console.log('Using expired cache as fallback');
-          return parsed.images;
-        }
-        return [];
-      }
+      // Return curated space images (no API call needed - always works)
+      console.log('Loading curated space images...');
+      const images = SPACE_IMAGES.slice(0, count).map(img => ({
+        ...img,
+        type: 'api',
+        source: 'Unsplash'
+      }));
+      return images;
     };
 
     const fetchNatureImages = async (count = 8) => {
