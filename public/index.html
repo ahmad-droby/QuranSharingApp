@@ -1001,6 +1001,7 @@
             const duration = durations[i];
 
             // Play audio for this ayah using pre-decoded buffer
+            console.log(`Ayah ${i + 1} - hasAudio: ${hasAudio}, hasContext: ${!!audioContext}, hasDestination: ${!!audioDestination}, hasDecodedBuffer: ${!!decodedAudioBuffers[i]}`);
             if (hasAudio && audioContext && audioDestination && decodedAudioBuffers[i]) {
               try {
                 const source = audioContext.createBufferSource();
@@ -1011,6 +1012,8 @@
               } catch (e) {
                 console.warn(`Audio playback failed for ayah ${i + 1}:`, e);
               }
+            } else {
+              console.warn(`Skipping audio for ayah ${i + 1} - missing required components`);
             }
 
             // Show this frame for duration
