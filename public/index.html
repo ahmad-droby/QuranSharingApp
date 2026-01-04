@@ -424,169 +424,44 @@
     ];
 
     // ============================================================================
-    // AUDIO API CONSTANTS (AlQuran.cloud CDN)
+    // AUDIO API CONSTANTS (Quran.com CDN - verified timing sync)
     // ============================================================================
 
-    const AUDIO_CDN = 'https://cdn.islamic.network/quran/audio';
-    const AUDIO_BITRATE = '128';
-
-    // Popular reciters - with both AlQuran.cloud ID and Quran.com API ID for timing data
-    const RECITERS = [
-      // Popular reciters (sorted by popularity)
-      { id: 'ar.alafasy', name: 'Mishary Rashid Alafasy', arabicName: 'مشاري العفاسي', quranComId: 6 },
-      { id: 'ar.abdulbasitmurattal', name: 'Abdul Basit (Murattal)', arabicName: 'عبد الباسط عبد الصمد', quranComId: 1 },
-      { id: 'ar.abdurrahmaansudais', name: 'Abdurrahmaan As-Sudais', arabicName: 'عبدالرحمن السديس', quranComId: 2 },
-      { id: 'ar.husary', name: 'Mahmoud Khalil Al-Husary', arabicName: 'محمود خليل الحصري', quranComId: 5 },
-      { id: 'ar.minshawi', name: 'Mohamed Siddiq El-Minshawi', arabicName: 'محمد صديق المنشاوي', quranComId: 7 },
-      { id: 'ar.mahermuaiqly', name: 'Maher Al-Muaiqly', arabicName: 'ماهر المعيقلي', quranComId: 9 },
-      { id: 'ar.saoodshuraym', name: 'Saud Al-Shuraim', arabicName: 'سعود الشريم', quranComId: 4 },
-      { id: 'ar.ahmedajamy', name: 'Ahmed ibn Ali al-Ajamy', arabicName: 'أحمد بن علي العجمي', quranComId: 10 },
-      { id: 'ar.muhammadayyoub', name: 'Muhammad Ayyub', arabicName: 'محمد أيوب', quranComId: 8 },
-      { id: 'ar.muhammadjibreel', name: 'Muhammad Jibreel', arabicName: 'محمد جبريل', quranComId: 11 },
-      { id: 'ar.hanirifai', name: 'Hani Ar-Rifai', arabicName: 'هاني الرفاعي', quranComId: 12 },
-      { id: 'ar.ibrahimakhbar', name: 'Ibrahim Al-Akhdar', arabicName: 'إبراهيم الأخضر', quranComId: 3 },
-      // Additional reciters
-      { id: 'ar.husarymujawwad', name: 'Al-Husary (Mujawwad)', arabicName: 'الحصري - مجود', quranComId: null },
-      { id: 'ar.minshawimujawwad', name: 'El-Minshawi (Mujawwad)', arabicName: 'المنشاوي - مجود', quranComId: null },
-      { id: 'ar.abdullahbasfar', name: 'Abdullah Basfar', arabicName: 'عبدالله بصفر', quranComId: null },
-      { id: 'ar.abdulsamad', name: 'Abdul Samad', arabicName: 'عبد الصمد', quranComId: null },
-      { id: 'ar.shaatree', name: 'Abu Bakr Ash-Shaatree', arabicName: 'أبو بكر الشاطري', quranComId: null },
-      { id: 'ar.hudhaify', name: 'Ali Al-Hudhaify', arabicName: 'علي الحذيفي', quranComId: null },
-      { id: 'ar.aymanswoaid', name: 'Ayman Sowaid', arabicName: 'أيمن سويد', quranComId: null },
-    ];
-
-    // Quran.com API for precise audio timing data
+    // Quran.com API for audio and precise timing data
     const QURAN_COM_AUDIO_API = 'https://api.qurancdn.com/api/qdc/audio/reciters';
 
-    // Cumulative ayah count per surah for global ayah number calculation
-    // Index 0 is unused, index 1 = start of surah 1, etc.
-    const SURAH_AYAH_STARTS = [
-      0,    // placeholder
-      1,    // 1. Al-Fatihah (7 ayahs)
-      8,    // 2. Al-Baqarah (286 ayahs)
-      294,  // 3. Aal-E-Imran (200 ayahs)
-      494,  // 4. An-Nisa (176 ayahs)
-      670,  // 5. Al-Ma'idah (120 ayahs)
-      790,  // 6. Al-An'am (165 ayahs)
-      955,  // 7. Al-A'raf (206 ayahs)
-      1161, // 8. Al-Anfal (75 ayahs)
-      1236, // 9. At-Tawbah (129 ayahs)
-      1365, // 10. Yunus (109 ayahs)
-      1474, // 11. Hud (123 ayahs)
-      1597, // 12. Yusuf (111 ayahs)
-      1708, // 13. Ar-Ra'd (43 ayahs)
-      1751, // 14. Ibrahim (52 ayahs)
-      1803, // 15. Al-Hijr (99 ayahs)
-      1902, // 16. An-Nahl (128 ayahs)
-      2030, // 17. Al-Isra (111 ayahs)
-      2141, // 18. Al-Kahf (110 ayahs)
-      2251, // 19. Maryam (98 ayahs)
-      2349, // 20. Ta-Ha (135 ayahs)
-      2484, // 21. Al-Anbiya (112 ayahs)
-      2596, // 22. Al-Hajj (78 ayahs)
-      2674, // 23. Al-Mu'minun (118 ayahs)
-      2792, // 24. An-Nur (64 ayahs)
-      2856, // 25. Al-Furqan (77 ayahs)
-      2933, // 26. Ash-Shu'ara (227 ayahs)
-      3160, // 27. An-Naml (93 ayahs)
-      3253, // 28. Al-Qasas (88 ayahs)
-      3341, // 29. Al-Ankabut (69 ayahs)
-      3410, // 30. Ar-Rum (60 ayahs)
-      3470, // 31. Luqman (34 ayahs)
-      3504, // 32. As-Sajdah (30 ayahs)
-      3534, // 33. Al-Ahzab (73 ayahs)
-      3607, // 34. Saba (54 ayahs)
-      3661, // 35. Fatir (45 ayahs)
-      3706, // 36. Ya-Sin (83 ayahs)
-      3789, // 37. As-Saffat (182 ayahs)
-      3971, // 38. Sad (88 ayahs)
-      4059, // 39. Az-Zumar (75 ayahs)
-      4134, // 40. Ghafir (85 ayahs)
-      4219, // 41. Fussilat (54 ayahs)
-      4273, // 42. Ash-Shura (53 ayahs)
-      4326, // 43. Az-Zukhruf (89 ayahs)
-      4415, // 44. Ad-Dukhan (59 ayahs)
-      4474, // 45. Al-Jathiyah (37 ayahs)
-      4511, // 46. Al-Ahqaf (35 ayahs)
-      4546, // 47. Muhammad (38 ayahs)
-      4584, // 48. Al-Fath (29 ayahs)
-      4613, // 49. Al-Hujurat (18 ayahs)
-      4631, // 50. Qaf (45 ayahs)
-      4676, // 51. Adh-Dhariyat (60 ayahs)
-      4736, // 52. At-Tur (49 ayahs)
-      4785, // 53. An-Najm (62 ayahs)
-      4847, // 54. Al-Qamar (55 ayahs)
-      4902, // 55. Ar-Rahman (78 ayahs)
-      4980, // 56. Al-Waqi'ah (96 ayahs)
-      5076, // 57. Al-Hadid (29 ayahs)
-      5105, // 58. Al-Mujadila (22 ayahs)
-      5127, // 59. Al-Hashr (24 ayahs)
-      5151, // 60. Al-Mumtahanah (13 ayahs)
-      5164, // 61. As-Saf (14 ayahs)
-      5178, // 62. Al-Jumu'ah (11 ayahs)
-      5189, // 63. Al-Munafiqun (11 ayahs)
-      5200, // 64. At-Taghabun (18 ayahs)
-      5218, // 65. At-Talaq (12 ayahs)
-      5230, // 66. At-Tahrim (12 ayahs)
-      5242, // 67. Al-Mulk (30 ayahs)
-      5272, // 68. Al-Qalam (52 ayahs)
-      5324, // 69. Al-Haqqah (52 ayahs)
-      5376, // 70. Al-Ma'arij (44 ayahs)
-      5420, // 71. Nuh (28 ayahs)
-      5448, // 72. Al-Jinn (28 ayahs)
-      5476, // 73. Al-Muzzammil (20 ayahs)
-      5496, // 74. Al-Muddathir (56 ayahs)
-      5552, // 75. Al-Qiyamah (40 ayahs)
-      5592, // 76. Al-Insan (31 ayahs)
-      5623, // 77. Al-Mursalat (50 ayahs)
-      5673, // 78. An-Naba (40 ayahs)
-      5713, // 79. An-Nazi'at (46 ayahs)
-      5759, // 80. Abasa (42 ayahs)
-      5801, // 81. At-Takwir (29 ayahs)
-      5830, // 82. Al-Infitar (19 ayahs)
-      5849, // 83. Al-Mutaffifin (36 ayahs)
-      5885, // 84. Al-Inshiqaq (25 ayahs)
-      5910, // 85. Al-Buruj (22 ayahs)
-      5932, // 86. At-Tariq (17 ayahs)
-      5949, // 87. Al-A'la (19 ayahs)
-      5968, // 88. Al-Ghashiyah (26 ayahs)
-      5994, // 89. Al-Fajr (30 ayahs)
-      6024, // 90. Al-Balad (20 ayahs)
-      6044, // 91. Ash-Shams (15 ayahs)
-      6059, // 92. Al-Layl (21 ayahs)
-      6080, // 93. Ad-Duhaa (11 ayahs)
-      6091, // 94. Ash-Sharh (8 ayahs)
-      6099, // 95. At-Tin (8 ayahs)
-      6107, // 96. Al-Alaq (19 ayahs)
-      6126, // 97. Al-Qadr (5 ayahs)
-      6131, // 98. Al-Bayyinah (8 ayahs)
-      6139, // 99. Az-Zalzalah (8 ayahs)
-      6147, // 100. Al-Adiyat (11 ayahs)
-      6158, // 101. Al-Qari'ah (11 ayahs)
-      6169, // 102. At-Takathur (8 ayahs)
-      6177, // 103. Al-Asr (3 ayahs)
-      6180, // 104. Al-Humazah (9 ayahs)
-      6189, // 105. Al-Fil (5 ayahs)
-      6194, // 106. Quraysh (4 ayahs)
-      6198, // 107. Al-Ma'un (7 ayahs)
-      6205, // 108. Al-Kawthar (3 ayahs)
-      6208, // 109. Al-Kafirun (6 ayahs)
-      6214, // 110. An-Nasr (3 ayahs)
-      6217, // 111. Al-Masad (5 ayahs)
-      6222, // 112. Al-Ikhlas (4 ayahs)
-      6226, // 113. Al-Falaq (5 ayahs)
-      6231, // 114. An-Nas (6 ayahs) -> ends at 6236
+    // All reciters with verified per-ayah audio + timing from Quran.com
+    // Audio from verses.quran.com, timing from api.qurancdn.com
+    // Each reciter has: id (API ID), name, arabicName, audioPath (for CDN URL)
+    const RECITERS = [
+      { id: 7, name: 'Mishary Rashid Alafasy', arabicName: 'مشاري العفاسي', audioPath: 'Alafasy/mp3', style: 'Murattal' },
+      { id: 2, name: 'Abdul Basit Abdul Samad', arabicName: 'عبد الباسط عبد الصمد', audioPath: 'AbdulBaset/Murattal/mp3', style: 'Murattal' },
+      { id: 1, name: 'Abdul Basit (Mujawwad)', arabicName: 'عبد الباسط - مجود', audioPath: 'AbdulBaset/Mujawwad/mp3', style: 'Mujawwad' },
+      { id: 3, name: 'Abdur-Rahman As-Sudais', arabicName: 'عبدالرحمن السديس', audioPath: 'Sudais/mp3', style: 'Murattal' },
+      { id: 9, name: 'Mohamed Siddiq Al-Minshawi', arabicName: 'محمد صديق المنشاوي', audioPath: 'Minshawi/Murattal/mp3', style: 'Murattal' },
+      { id: 10, name: "Sa'ud Ash-Shuraim", arabicName: 'سعود الشريم', audioPath: 'Shuraym/mp3', style: 'Murattal' },
+      { id: 4, name: 'Abu Bakr Ash-Shatri', arabicName: 'أبو بكر الشاطري', audioPath: 'Shatri/mp3', style: 'Murattal' },
+      { id: 5, name: 'Hani Ar-Rifai', arabicName: 'هاني الرفاعي', audioPath: 'Rifai/mp3', style: 'Murattal' },
+      // These use mirrors.quranicaudio.com instead of verses.quran.com
+      { id: 6, name: 'Mahmoud Khalil Al-Husary', arabicName: 'محمود خليل الحصري', audioPath: 'Husary_64kbps', style: 'Murattal', useMirror: true },
+      { id: 12, name: 'Al-Husary (Muallim)', arabicName: 'الحصري - معلم', audioPath: 'Husary_Muallim_128kbps', style: 'Muallim', useMirror: true },
     ];
 
-    // Get global ayah number (1-6236) from surah and ayah number
-    const getGlobalAyahNumber = (surahNum, ayahNum) => {
-      return SURAH_AYAH_STARTS[surahNum] + ayahNum - 1;
-    };
+    // CDN URLs for per-ayah audio
+    const VERSES_QURAN_CDN = 'https://verses.quran.com';
+    const MIRRORS_CDN = 'https://mirrors.quranicaudio.com/everyayah';
 
     // Get audio URL for a specific ayah
-    const getAyahAudioUrl = (surahNum, ayahNum, reciterId = 'ar.alafasy') => {
-      const globalNum = getGlobalAyahNumber(surahNum, ayahNum);
-      return `${AUDIO_CDN}/${AUDIO_BITRATE}/${reciterId}/${globalNum}.mp3`;
+    // Format: {CDN}/{reciter_path}/{surah3digits}{ayah3digits}.mp3
+    const getAyahAudioUrl = (surahNum, ayahNum, reciter) => {
+      const surahPadded = String(surahNum).padStart(3, '0');
+      const ayahPadded = String(ayahNum).padStart(3, '0');
+      const fileName = `${surahPadded}${ayahPadded}.mp3`;
+
+      if (reciter.useMirror) {
+        return `${MIRRORS_CDN}/${reciter.audioPath}/${fileName}`;
+      }
+      return `${VERSES_QURAN_CDN}/${reciter.audioPath}/${fileName}`;
     };
 
     // Calculate display duration based on text length
@@ -729,8 +604,8 @@
     ];
 
     // Preload audio for an ayah
-    const preloadAyahAudio = async (surahNum, ayahNum, reciterId) => {
-      const directUrl = getAyahAudioUrl(surahNum, ayahNum, reciterId);
+    const preloadAyahAudio = async (surahNum, ayahNum, reciter) => {
+      const directUrl = getAyahAudioUrl(surahNum, ayahNum, reciter);
       console.log(`Fetching audio: ${directUrl}`);
 
       // Try direct fetch first (works when served from a web server)
@@ -793,8 +668,7 @@
         surahNum,
         transition,
         includeAudio,
-        reciterId,
-        selectedReciter, // Full reciter object with quranComId
+        selectedReciter, // Full reciter object with id, audioPath, etc.
         format,
         background,
         textColor,
@@ -813,7 +687,7 @@
       } = options;
 
       onStatusChange?.('Initializing...');
-      console.log('generateVideo called with:', { includeAudio, reciterId, ayahsCount: ayahsData.length });
+      console.log('generateVideo called with:', { includeAudio, reciter: selectedReciter?.name, ayahsCount: ayahsData.length });
       const size = FORMATS[format];
 
       // Create a visible canvas for recording (MediaRecorder works better with visible elements)
@@ -826,10 +700,11 @@
       const ctx = recordingCanvas.getContext('2d');
 
       // Fetch precise timing data from Quran.com API if audio is enabled
+      // All reciters now use Quran.com CDN with verified timing data
       let verseTimings = null;
-      if (includeAudio && selectedReciter?.quranComId) {
+      if (includeAudio && selectedReciter?.id) {
         onStatusChange?.('Fetching precise timing data...');
-        verseTimings = await fetchVerseTimings(surahNum, selectedReciter.quranComId);
+        verseTimings = await fetchVerseTimings(surahNum, selectedReciter.id);
         if (verseTimings) {
           console.log('Precise timing data loaded for', Object.keys(verseTimings).length, 'verses');
         }
@@ -840,7 +715,7 @@
       const frameImages = [];
       const audioBuffers = [];
 
-      console.log('Starting frame rendering, includeAudio:', includeAudio, 'reciterId:', reciterId);
+      console.log('Starting frame rendering, includeAudio:', includeAudio, 'reciter:', selectedReciter?.name);
 
       for (let i = 0; i < ayahsData.length; i++) {
         const ayah = ayahsData[i];
@@ -871,10 +746,10 @@
         frameImages.push(frameCanvas);
 
         // Load audio for this ayah if audio is enabled
-        if (includeAudio) {
+        if (includeAudio && selectedReciter) {
           console.log(`Loading audio for ayah ${i + 1}: surah ${surahNum}, ayah ${ayah.ayahNum}`);
           onStatusChange?.(`Loading audio ${i + 1}/${ayahsData.length}...`);
-          const audioData = await preloadAyahAudio(surahNum, ayah.ayahNum, reciterId);
+          const audioData = await preloadAyahAudio(surahNum, ayah.ayahNum, selectedReciter);
           audioBuffers.push(audioData);
           console.log(`Audio ${i + 1} loaded:`, audioData ? `${audioData.byteLength} bytes` : 'failed');
         }
@@ -1771,8 +1646,7 @@
             surahNum,
             transition: videoTransition,
             includeAudio,
-            reciterId: selectedReciter.id,
-            selectedReciter, // Pass full reciter object for quranComId
+            selectedReciter, // Full reciter object with id, audioPath, etc.
             format,
             background,
             textColor,
@@ -2129,11 +2003,11 @@
                           <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', opacity: 0.8 }}>Reciter:</label>
                           <select
                             value={selectedReciter.id}
-                            onChange={e => setSelectedReciter(RECITERS.find(r => r.id === e.target.value))}
+                            onChange={e => setSelectedReciter(RECITERS.find(r => r.id === parseInt(e.target.value)))}
                             style={{ width: '100%' }}
                           >
                             {RECITERS.map(r => (
-                              <option key={r.id} value={r.id}>{r.name} ({r.arabicName})</option>
+                              <option key={r.id} value={r.id}>{r.name} ({r.arabicName}) - {r.style}</option>
                             ))}
                           </select>
                         </div>
