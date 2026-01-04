@@ -1,0 +1,2384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ayah Canvas - Quran Post Generator</title>
+
+  <!-- React and Babel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Scheherazade+New:wght@400;700&family=Poppins:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="../src/styles/main.css">
+
+  <!-- Loading styles -->
+  <style>
+    .loading-screen {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #1A1A2E, #16213E, #0F3460);
+      color: #E8E8E8;
+      font-family: 'Poppins', sans-serif;
+    }
+    .loading-spinner {
+      width: 60px;
+      height: 60px;
+      border: 4px solid rgba(201, 162, 39, 0.2);
+      border-top-color: #C9A227;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1.5rem;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .loading-text {
+      font-size: 1.2rem;
+      color: #C9A227;
+      margin-bottom: 0.5rem;
+    }
+    .loading-sub {
+      font-size: 0.9rem;
+      opacity: 0.7;
+    }
+    .error-screen {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #1A1A2E, #16213E, #0F3460);
+      color: #E8E8E8;
+      font-family: 'Poppins', sans-serif;
+      padding: 2rem;
+      text-align: center;
+    }
+    .error-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+    }
+    .error-title {
+      font-size: 1.5rem;
+      color: #ff6b6b;
+      margin-bottom: 0.5rem;
+    }
+    .error-message {
+      opacity: 0.8;
+      margin-bottom: 1.5rem;
+      max-width: 400px;
+    }
+    .retry-btn {
+      padding: 0.75rem 2rem;
+      background: linear-gradient(135deg, #C9A227, #B8941F);
+      border: none;
+      border-radius: 10px;
+      color: #1A1A2E;
+      font-family: 'Poppins', sans-serif;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .retry-btn:hover {
+      transform: translateY(-2px);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Application Bundle -->
+  <script type="text/babel" data-type="module">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+    // ============================================================================
+    // UTILITY FUNCTIONS
+    // ============================================================================
+
+    const ARABIC_NUMERALS = '\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669';
+
+    const toArabicNumeral = (n) => {
+      return String(n).split('').map(digit => ARABIC_NUMERALS[parseInt(digit)] || digit).join('');
+    };
+
+    // Use U+06DD (۝) - the proper Unicode "Arabic End of Ayah" character
+    // This character is designed to hold digits and renders as a single unit
+    const createAyahMarker = (n) => `\u06DD${toArabicNumeral(n)}`;
+
+    const storage = {
+      get: (key, defaultValue = null) => {
+        try {
+          const item = localStorage.getItem(key);
+          return item ? JSON.parse(item) : defaultValue;
+        } catch (e) {
+          console.warn('localStorage read error:', e);
+          return defaultValue;
+        }
+      },
+      set: (key, value) => {
+        try {
+          localStorage.setItem(key, JSON.stringify(value));
+          return true;
+        } catch (e) {
+          console.warn('localStorage write error:', e);
+          return false;
+        }
+      }
+    };
+
+    const wrapArabicText = (ctx, text, maxWidth) => {
+      // Split into tokens, keeping word+marker together as single units
+      // U+06DD is the Arabic End of Ayah character which holds digits
+      const tokenRegex = /\S+\u06DD[\u0660-\u0669]+|\S+/g;
+      const tokens = text.match(tokenRegex) || [];
+
+      const lines = [];
+      let currentLine = '';
+
+      for (const token of tokens) {
+        const testLine = currentLine ? currentLine + ' ' + token : token;
+        const testWidth = ctx.measureText(testLine).width;
+
+        if (testWidth > maxWidth && currentLine !== '') {
+          lines.push(currentLine);
+          currentLine = token;
+        } else {
+          currentLine = testLine;
+        }
+      }
+
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+
+      return lines.filter(line => line.trim());
+    };
+
+    const wrapLTRText = (ctx, text, maxWidth) => {
+      const words = text.split(' ');
+      const lines = [];
+      let currentLine = '';
+
+      for (const word of words) {
+        const testLine = currentLine + word + ' ';
+        if (ctx.measureText(testLine).width > maxWidth && currentLine !== '') {
+          lines.push(currentLine.trim());
+          currentLine = word + ' ';
+        } else {
+          currentLine = testLine;
+        }
+      }
+
+      if (currentLine.trim()) {
+        lines.push(currentLine.trim());
+      }
+
+      return lines;
+    };
+
+    // ============================================================================
+    // CANVAS UTILITIES
+    // ============================================================================
+
+    const calculateFontSizes = (width, height, arabicText, secondaryText, isTafsir) => {
+      const arabicLength = arabicText.length;
+      const secondaryLength = secondaryText.length;
+
+      let arabicSize;
+      if (arabicLength > 800) arabicSize = 22;
+      else if (arabicLength > 600) arabicSize = 26;
+      else if (arabicLength > 400) arabicSize = 30;
+      else if (arabicLength > 300) arabicSize = 34;
+      else if (arabicLength > 200) arabicSize = 38;
+      else if (arabicLength > 100) arabicSize = 44;
+      else arabicSize = 50;
+
+      let secondarySize;
+      if (isTafsir) {
+        if (secondaryLength > 800) secondarySize = 18;
+        else if (secondaryLength > 500) secondarySize = 22;
+        else if (secondaryLength > 300) secondarySize = 26;
+        else if (secondaryLength > 150) secondarySize = 30;
+        else secondarySize = 34;
+      } else {
+        if (secondaryLength > 1000) secondarySize = 12;
+        else if (secondaryLength > 800) secondarySize = 14;
+        else if (secondaryLength > 500) secondarySize = 16;
+        else if (secondaryLength > 300) secondarySize = 18;
+        else if (secondaryLength > 150) secondarySize = 20;
+        else secondarySize = 24;
+      }
+
+      if (height > width) {
+        arabicSize = Math.min(arabicSize + 4, 54);
+        secondarySize = Math.min(secondarySize + (isTafsir ? 3 : 2), isTafsir ? 38 : 26);
+      }
+
+      return { arabicSize, secondarySize };
+    };
+
+    const drawPattern = (ctx, width, height, pattern, color) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.15;
+
+      const spacing = pattern === 'star' ? 100 : pattern === 'arabesque' ? 80 : pattern === 'geometric' ? 60 : 40;
+
+      switch (pattern) {
+        case 'geometric':
+          for (let x = 0; x < width + spacing; x += spacing) {
+            for (let y = 0; y < height + spacing; y += spacing) {
+              ctx.beginPath();
+              ctx.moveTo(x, y);
+              ctx.lineTo(x + spacing / 2, y + spacing / 2);
+              ctx.lineTo(x, y + spacing);
+              ctx.lineTo(x - spacing / 2, y + spacing / 2);
+              ctx.closePath();
+              ctx.stroke();
+            }
+          }
+          break;
+        case 'arabesque':
+          for (let x = 0; x < width + spacing; x += spacing) {
+            for (let y = 0; y < height + spacing; y += spacing) {
+              ctx.beginPath();
+              ctx.arc(x, y, spacing / 3, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+          }
+          break;
+        case 'star':
+          for (let x = spacing / 2; x < width; x += spacing) {
+            for (let y = spacing / 2; y < height; y += spacing) {
+              ctx.beginPath();
+              for (let i = 0; i < 8; i++) {
+                const angle = (i * Math.PI) / 4;
+                const radius = i % 2 === 0 ? spacing / 3 : spacing / 6;
+                const px = x + Math.cos(angle) * radius;
+                const py = y + Math.sin(angle) * radius;
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+              }
+              ctx.closePath();
+              ctx.stroke();
+            }
+          }
+          break;
+        case 'lattice':
+          for (let x = 0; x < width + spacing; x += spacing) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
+            ctx.stroke();
+          }
+          for (let y = 0; y < height + spacing; y += spacing) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+          }
+          break;
+      }
+
+      ctx.globalAlpha = 1;
+    };
+
+    const drawDecoration = (ctx, width, height, decoration, color) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.8;
+
+      switch (decoration) {
+        case 'border':
+          ctx.strokeRect(40, 40, width - 80, height - 80);
+          break;
+        case 'frame':
+          ctx.strokeRect(30, 30, width - 60, height - 60);
+          ctx.lineWidth = 1;
+          ctx.strokeRect(45, 45, width - 90, height - 90);
+          break;
+        case 'vignette':
+          const gradient = ctx.createRadialGradient(width / 2, height / 2, width * 0.3, width / 2, height / 2, width * 0.8);
+          gradient.addColorStop(0, 'rgba(0,0,0,0)');
+          gradient.addColorStop(1, 'rgba(0,0,0,0.7)');
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, width, height);
+          break;
+        case 'ornament':
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(width / 2 - 150, 80);
+          ctx.quadraticCurveTo(width / 2 - 75, 50, width / 2, 60);
+          ctx.quadraticCurveTo(width / 2 + 75, 50, width / 2 + 150, 80);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(width / 2 - 150, height - 80);
+          ctx.quadraticCurveTo(width / 2 - 75, height - 50, width / 2, height - 60);
+          ctx.quadraticCurveTo(width / 2 + 75, height - 50, width / 2 + 150, height - 80);
+          ctx.stroke();
+          break;
+        case 'corners':
+          const cs = 60;
+          const corners = [
+            [30, 30 + cs, 30, 30, 30 + cs, 30],
+            [width - 30 - cs, 30, width - 30, 30, width - 30, 30 + cs],
+            [30, height - 30 - cs, 30, height - 30, 30 + cs, height - 30],
+            [width - 30 - cs, height - 30, width - 30, height - 30, width - 30, height - 30 - cs]
+          ];
+          corners.forEach(([x1, y1, x2, y2, x3, y3]) => {
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.lineTo(x3, y3);
+            ctx.stroke();
+          });
+          break;
+      }
+
+      ctx.globalAlpha = 1;
+    };
+
+    // ============================================================================
+    // CONFIGURATION
+    // ============================================================================
+
+    const BACKGROUNDS = {
+      nature: [
+        { id: 'n1', name: 'Sunset', colors: ['#1a1a2e', '#16213e', '#0f3460', '#533483'] },
+        { id: 'n2', name: 'Ocean', colors: ['#0c2461', '#1e3799', '#4a69bd', '#6a89cc'] },
+        { id: 'n3', name: 'Forest', colors: ['#0a3d62', '#1e5f74', '#133b5c', '#1d566e'] },
+        { id: 'n4', name: 'Mountain', colors: ['#2c2c54', '#474787', '#706fd3', '#40407a'] },
+        { id: 'n5', name: 'Desert', colors: ['#8B4513', '#CD853F', '#DEB887', '#D2691E'] },
+      ],
+      islamic: [
+        { id: 'i1', name: 'Royal', colors: ['#1a1a2e', '#0f3460', '#16213e'], pattern: 'geometric' },
+        { id: 'i2', name: 'Emerald', colors: ['#0a3d62', '#1e5f74', '#2c786c'], pattern: 'arabesque' },
+        { id: 'i3', name: 'Golden', colors: ['#2d132c', '#801336', '#c72c41'], pattern: 'star' },
+        { id: 'i4', name: 'Midnight', colors: ['#1a1a2e', '#16213e', '#533483'], pattern: 'lattice' },
+      ],
+      abstract: [
+        { id: 'a1', name: 'Purple', colors: ['#667eea', '#764ba2', '#f77062'] },
+        { id: 'a2', name: 'Teal', colors: ['#11998e', '#38ef7d', '#1a535c'] },
+        { id: 'a3', name: 'Rose', colors: ['#f5af19', '#f12711', '#e8d5b7'] },
+        { id: 'a4', name: 'Aurora', colors: ['#43cea2', '#185a9d', '#43cea2'] },
+      ],
+      solid: [
+        { id: 's1', name: 'Navy', colors: ['#1A1A2E', '#16213E'] },
+        { id: 's2', name: 'Charcoal', colors: ['#2D2D2D', '#1A1A1A'] },
+        { id: 's3', name: 'Blue', colors: ['#0F3460', '#16213E'] },
+        { id: 's4', name: 'Purple', colors: ['#4A1942', '#1A1A2E'] },
+        { id: 's5', name: 'Green', colors: ['#1B4332', '#081C15'] },
+      ]
+    };
+
+    const TEXT_COLORS = ['#FFFFFF', '#C9A227', '#E8D48A', '#F5F5DC', '#87CEEB', '#FFB6C1', '#98FB98', '#DDA0DD', '#F0E68C', '#B0C4DE'];
+
+    const DECORATIONS = [
+      { id: 'none', name: 'None' },
+      { id: 'border', name: 'Border' },
+      { id: 'frame', name: 'Frame' },
+      { id: 'vignette', name: 'Vignette' },
+      { id: 'ornament', name: 'Ornament' },
+      { id: 'corners', name: 'Corners' }
+    ];
+
+    const FORMATS = {
+      square: { w: 1080, h: 1080, label: 'Square' },
+      portrait: { w: 1080, h: 1350, label: 'Portrait' },
+      story: { w: 1080, h: 1920, label: 'Story' }
+    };
+
+    const FONTS = {
+      arabic: "'Scheherazade New', 'Amiri', serif",
+      english: "'Poppins', sans-serif"
+    };
+
+    // ============================================================================
+    // VIDEO GENERATION CONSTANTS
+    // ============================================================================
+
+    const VIDEO_FPS = 30;
+    const TRANSITION_DURATION = 1000; // 1 second transitions
+    const MIN_AYAH_DURATION = 3000;   // Minimum 3 seconds per ayah
+    const CHARS_PER_SECOND = 15;      // For calculating duration based on text length
+
+    // Transition types available to users
+    const TRANSITIONS = [
+      { id: 'fade', name: 'Fade', icon: '✨' },
+      { id: 'slideLeft', name: 'Slide Left', icon: '⬅️' },
+      { id: 'slideRight', name: 'Slide Right', icon: '➡️' },
+      { id: 'slideUp', name: 'Slide Up', icon: '⬆️' },
+      { id: 'zoomIn', name: 'Zoom In', icon: '🔍' },
+      { id: 'none', name: 'None (Cut)', icon: '✂️' },
+    ];
+
+    // ============================================================================
+    // AUDIO API CONSTANTS (AlQuran.cloud CDN)
+    // ============================================================================
+
+    const AUDIO_CDN = 'https://cdn.islamic.network/quran/audio';
+    const AUDIO_BITRATE = '128';
+
+    // Popular reciters - with both AlQuran.cloud ID and Quran.com API ID for timing data
+    const RECITERS = [
+      { id: 'ar.alafasy', name: 'Mishary Rashid Alafasy', arabicName: 'مشاري العفاسي', quranComId: 6 },
+      { id: 'ar.abdulbasit', name: 'Abdul Basit Abdul Samad', arabicName: 'عبد الباسط عبد الصمد', quranComId: 1 },
+      { id: 'ar.abdurrahmaansudais', name: 'Abdurrahmaan As-Sudais', arabicName: 'عبدالرحمن السديس', quranComId: 2 },
+      { id: 'ar.husary', name: 'Mahmoud Khalil Al-Husary', arabicName: 'محمود خليل الحصري', quranComId: 5 },
+      { id: 'ar.minshawi', name: 'Mohamed Siddiq El-Minshawi', arabicName: 'محمد صديق المنشاوي', quranComId: 7 },
+    ];
+
+    // Quran.com API for precise audio timing data
+    const QURAN_COM_AUDIO_API = 'https://api.qurancdn.com/api/qdc/audio/reciters';
+
+    // Cumulative ayah count per surah for global ayah number calculation
+    // Index 0 is unused, index 1 = start of surah 1, etc.
+    const SURAH_AYAH_STARTS = [
+      0,    // placeholder
+      1,    // 1. Al-Fatihah (7 ayahs)
+      8,    // 2. Al-Baqarah (286 ayahs)
+      294,  // 3. Aal-E-Imran (200 ayahs)
+      494,  // 4. An-Nisa (176 ayahs)
+      670,  // 5. Al-Ma'idah (120 ayahs)
+      790,  // 6. Al-An'am (165 ayahs)
+      955,  // 7. Al-A'raf (206 ayahs)
+      1161, // 8. Al-Anfal (75 ayahs)
+      1236, // 9. At-Tawbah (129 ayahs)
+      1365, // 10. Yunus (109 ayahs)
+      1474, // 11. Hud (123 ayahs)
+      1597, // 12. Yusuf (111 ayahs)
+      1708, // 13. Ar-Ra'd (43 ayahs)
+      1751, // 14. Ibrahim (52 ayahs)
+      1803, // 15. Al-Hijr (99 ayahs)
+      1902, // 16. An-Nahl (128 ayahs)
+      2030, // 17. Al-Isra (111 ayahs)
+      2141, // 18. Al-Kahf (110 ayahs)
+      2251, // 19. Maryam (98 ayahs)
+      2349, // 20. Ta-Ha (135 ayahs)
+      2484, // 21. Al-Anbiya (112 ayahs)
+      2596, // 22. Al-Hajj (78 ayahs)
+      2674, // 23. Al-Mu'minun (118 ayahs)
+      2792, // 24. An-Nur (64 ayahs)
+      2856, // 25. Al-Furqan (77 ayahs)
+      2933, // 26. Ash-Shu'ara (227 ayahs)
+      3160, // 27. An-Naml (93 ayahs)
+      3253, // 28. Al-Qasas (88 ayahs)
+      3341, // 29. Al-Ankabut (69 ayahs)
+      3410, // 30. Ar-Rum (60 ayahs)
+      3470, // 31. Luqman (34 ayahs)
+      3504, // 32. As-Sajdah (30 ayahs)
+      3534, // 33. Al-Ahzab (73 ayahs)
+      3607, // 34. Saba (54 ayahs)
+      3661, // 35. Fatir (45 ayahs)
+      3706, // 36. Ya-Sin (83 ayahs)
+      3789, // 37. As-Saffat (182 ayahs)
+      3971, // 38. Sad (88 ayahs)
+      4059, // 39. Az-Zumar (75 ayahs)
+      4134, // 40. Ghafir (85 ayahs)
+      4219, // 41. Fussilat (54 ayahs)
+      4273, // 42. Ash-Shura (53 ayahs)
+      4326, // 43. Az-Zukhruf (89 ayahs)
+      4415, // 44. Ad-Dukhan (59 ayahs)
+      4474, // 45. Al-Jathiyah (37 ayahs)
+      4511, // 46. Al-Ahqaf (35 ayahs)
+      4546, // 47. Muhammad (38 ayahs)
+      4584, // 48. Al-Fath (29 ayahs)
+      4613, // 49. Al-Hujurat (18 ayahs)
+      4631, // 50. Qaf (45 ayahs)
+      4676, // 51. Adh-Dhariyat (60 ayahs)
+      4736, // 52. At-Tur (49 ayahs)
+      4785, // 53. An-Najm (62 ayahs)
+      4847, // 54. Al-Qamar (55 ayahs)
+      4902, // 55. Ar-Rahman (78 ayahs)
+      4980, // 56. Al-Waqi'ah (96 ayahs)
+      5076, // 57. Al-Hadid (29 ayahs)
+      5105, // 58. Al-Mujadila (22 ayahs)
+      5127, // 59. Al-Hashr (24 ayahs)
+      5151, // 60. Al-Mumtahanah (13 ayahs)
+      5164, // 61. As-Saf (14 ayahs)
+      5178, // 62. Al-Jumu'ah (11 ayahs)
+      5189, // 63. Al-Munafiqun (11 ayahs)
+      5200, // 64. At-Taghabun (18 ayahs)
+      5218, // 65. At-Talaq (12 ayahs)
+      5230, // 66. At-Tahrim (12 ayahs)
+      5242, // 67. Al-Mulk (30 ayahs)
+      5272, // 68. Al-Qalam (52 ayahs)
+      5324, // 69. Al-Haqqah (52 ayahs)
+      5376, // 70. Al-Ma'arij (44 ayahs)
+      5420, // 71. Nuh (28 ayahs)
+      5448, // 72. Al-Jinn (28 ayahs)
+      5476, // 73. Al-Muzzammil (20 ayahs)
+      5496, // 74. Al-Muddathir (56 ayahs)
+      5552, // 75. Al-Qiyamah (40 ayahs)
+      5592, // 76. Al-Insan (31 ayahs)
+      5623, // 77. Al-Mursalat (50 ayahs)
+      5673, // 78. An-Naba (40 ayahs)
+      5713, // 79. An-Nazi'at (46 ayahs)
+      5759, // 80. Abasa (42 ayahs)
+      5801, // 81. At-Takwir (29 ayahs)
+      5830, // 82. Al-Infitar (19 ayahs)
+      5849, // 83. Al-Mutaffifin (36 ayahs)
+      5885, // 84. Al-Inshiqaq (25 ayahs)
+      5910, // 85. Al-Buruj (22 ayahs)
+      5932, // 86. At-Tariq (17 ayahs)
+      5949, // 87. Al-A'la (19 ayahs)
+      5968, // 88. Al-Ghashiyah (26 ayahs)
+      5994, // 89. Al-Fajr (30 ayahs)
+      6024, // 90. Al-Balad (20 ayahs)
+      6044, // 91. Ash-Shams (15 ayahs)
+      6059, // 92. Al-Layl (21 ayahs)
+      6080, // 93. Ad-Duhaa (11 ayahs)
+      6091, // 94. Ash-Sharh (8 ayahs)
+      6099, // 95. At-Tin (8 ayahs)
+      6107, // 96. Al-Alaq (19 ayahs)
+      6126, // 97. Al-Qadr (5 ayahs)
+      6131, // 98. Al-Bayyinah (8 ayahs)
+      6139, // 99. Az-Zalzalah (8 ayahs)
+      6147, // 100. Al-Adiyat (11 ayahs)
+      6158, // 101. Al-Qari'ah (11 ayahs)
+      6169, // 102. At-Takathur (8 ayahs)
+      6177, // 103. Al-Asr (3 ayahs)
+      6180, // 104. Al-Humazah (9 ayahs)
+      6189, // 105. Al-Fil (5 ayahs)
+      6194, // 106. Quraysh (4 ayahs)
+      6198, // 107. Al-Ma'un (7 ayahs)
+      6205, // 108. Al-Kawthar (3 ayahs)
+      6208, // 109. Al-Kafirun (6 ayahs)
+      6214, // 110. An-Nasr (3 ayahs)
+      6217, // 111. Al-Masad (5 ayahs)
+      6222, // 112. Al-Ikhlas (4 ayahs)
+      6226, // 113. Al-Falaq (5 ayahs)
+      6231, // 114. An-Nas (6 ayahs) -> ends at 6236
+    ];
+
+    // Get global ayah number (1-6236) from surah and ayah number
+    const getGlobalAyahNumber = (surahNum, ayahNum) => {
+      return SURAH_AYAH_STARTS[surahNum] + ayahNum - 1;
+    };
+
+    // Get audio URL for a specific ayah
+    const getAyahAudioUrl = (surahNum, ayahNum, reciterId = 'ar.alafasy') => {
+      const globalNum = getGlobalAyahNumber(surahNum, ayahNum);
+      return `${AUDIO_CDN}/${AUDIO_BITRATE}/${reciterId}/${globalNum}.mp3`;
+    };
+
+    // Calculate display duration based on text length
+    const calculateAyahDuration = (arabicText, secondaryText = '') => {
+      const totalChars = arabicText.length + secondaryText.length;
+      const calculatedDuration = (totalChars / CHARS_PER_SECOND) * 1000;
+      return Math.max(MIN_AYAH_DURATION, calculatedDuration);
+    };
+
+    // ============================================================================
+    // PRECISE AUDIO TIMING API (Quran.com)
+    // ============================================================================
+
+    // Fetch verse timing data from Quran.com API for precise synchronization
+    // Returns object with verse_key -> { timestamp_from, timestamp_to, duration, segments }
+    const fetchVerseTimings = async (surahNum, reciterQuranComId) => {
+      try {
+        const url = `${QURAN_COM_AUDIO_API}/${reciterQuranComId}/audio_files?chapter=${surahNum}&segments=true`;
+        console.log('Fetching verse timings from:', url);
+
+        const response = await fetch(url);
+        if (!response.ok) {
+          console.warn('Failed to fetch verse timings:', response.status);
+          return null;
+        }
+
+        const data = await response.json();
+        const audioFiles = data.audio_files || [];
+
+        if (audioFiles.length === 0) {
+          console.warn('No audio files found for surah', surahNum);
+          return null;
+        }
+
+        // Build a map of verse_key -> timing data
+        const timingsMap = {};
+        const verseTimings = audioFiles[0]?.verse_timings || [];
+
+        for (const timing of verseTimings) {
+          timingsMap[timing.verse_key] = {
+            timestamp_from: timing.timestamp_from,
+            timestamp_to: timing.timestamp_to,
+            duration: timing.timestamp_to - timing.timestamp_from,
+            segments: timing.segments || [] // [[word_num, start_ms, end_ms], ...]
+          };
+        }
+
+        console.log(`Loaded timing data for ${Object.keys(timingsMap).length} verses`);
+        return timingsMap;
+      } catch (e) {
+        console.warn('Error fetching verse timings:', e);
+        return null;
+      }
+    };
+
+    // Get precise duration for an ayah from timing data
+    const getAyahPreciseDuration = (timingsMap, surahNum, ayahNum) => {
+      if (!timingsMap) return null;
+
+      const verseKey = `${surahNum}:${ayahNum}`;
+      const timing = timingsMap[verseKey];
+
+      if (timing && timing.duration > 0) {
+        return timing.duration;
+      }
+      return null;
+    };
+
+    // ============================================================================
+    // TRANSITION ANIMATION FUNCTIONS
+    // ============================================================================
+
+    // Apply transition effect between two frames
+    const applyTransition = (ctx, progress, type, currentFrame, nextFrame) => {
+      const width = ctx.canvas.width;
+      const height = ctx.canvas.height;
+
+      switch (type) {
+        case 'fade':
+          // Draw current frame with decreasing opacity
+          ctx.globalAlpha = 1 - progress;
+          ctx.drawImage(currentFrame, 0, 0);
+          // Draw next frame with increasing opacity
+          ctx.globalAlpha = progress;
+          ctx.drawImage(nextFrame, 0, 0);
+          break;
+
+        case 'slideLeft':
+          const offsetXLeft = width * progress;
+          ctx.drawImage(currentFrame, -offsetXLeft, 0);
+          ctx.drawImage(nextFrame, width - offsetXLeft, 0);
+          break;
+
+        case 'slideRight':
+          const offsetXRight = width * progress;
+          ctx.drawImage(currentFrame, offsetXRight, 0);
+          ctx.drawImage(nextFrame, -width + offsetXRight, 0);
+          break;
+
+        case 'slideUp':
+          const offsetY = height * progress;
+          ctx.drawImage(currentFrame, 0, -offsetY);
+          ctx.drawImage(nextFrame, 0, height - offsetY);
+          break;
+
+        case 'zoomIn':
+          // Current frame zooms out and fades
+          ctx.globalAlpha = 1 - progress;
+          const scaleOut = 1 - (progress * 0.3);
+          const offsetXOut = (width * (1 - scaleOut)) / 2;
+          const offsetYOut = (height * (1 - scaleOut)) / 2;
+          ctx.drawImage(currentFrame, offsetXOut, offsetYOut, width * scaleOut, height * scaleOut);
+          // Next frame zooms in from center
+          ctx.globalAlpha = progress;
+          const scaleIn = 0.7 + (progress * 0.3);
+          const offsetXIn = (width * (1 - scaleIn)) / 2;
+          const offsetYIn = (height * (1 - scaleIn)) / 2;
+          ctx.drawImage(nextFrame, offsetXIn, offsetYIn, width * scaleIn, height * scaleIn);
+          break;
+
+        case 'none':
+        default:
+          // Hard cut - just show next frame
+          ctx.drawImage(progress < 0.5 ? currentFrame : nextFrame, 0, 0);
+          break;
+      }
+
+      ctx.globalAlpha = 1;
+    };
+
+    // ============================================================================
+    // VIDEO GENERATION SERVICE
+    // ============================================================================
+
+    // CORS proxy for audio when running from file://
+    const CORS_PROXIES = [
+      'https://corsproxy.io/?',
+      'https://api.allorigins.win/raw?url=',
+    ];
+
+    // Preload audio for an ayah
+    const preloadAyahAudio = async (surahNum, ayahNum, reciterId) => {
+      const directUrl = getAyahAudioUrl(surahNum, ayahNum, reciterId);
+      console.log(`Fetching audio: ${directUrl}`);
+
+      // Try direct fetch first (works when served from a web server)
+      try {
+        const response = await fetch(directUrl);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          console.log(`Audio fetched directly: ${arrayBuffer.byteLength} bytes`);
+          return arrayBuffer;
+        }
+      } catch (e) {
+        console.log('Direct fetch failed, trying CORS proxy...');
+      }
+
+      // Try CORS proxies
+      for (const proxy of CORS_PROXIES) {
+        try {
+          const proxyUrl = proxy + encodeURIComponent(directUrl);
+          console.log(`Trying proxy: ${proxy.split('?')[0]}`);
+          const response = await fetch(proxyUrl);
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            console.log(`Audio fetched via proxy: ${arrayBuffer.byteLength} bytes`);
+            return arrayBuffer;
+          }
+        } catch (e) {
+          console.log(`Proxy failed: ${proxy.split('?')[0]}`);
+        }
+      }
+
+      console.warn(`Failed to preload audio for ${surahNum}:${ayahNum}`);
+      return null;
+    };
+
+    // Get audio duration from ArrayBuffer
+    const getAudioDuration = async (arrayBuffer) => {
+      try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+        audioContext.close();
+        return audioBuffer.duration * 1000; // Convert to milliseconds
+      } catch (e) {
+        console.warn('Failed to get audio duration:', e);
+        return null;
+      }
+    };
+
+    // Sleep helper
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Generate video from ayahs - uses visible canvas for reliable recording
+    const generateVideo = async (options) => {
+      const {
+        ayahsData,
+        surahNum,
+        transition,
+        includeAudio,
+        reciterId,
+        selectedReciter, // Full reciter object with quranComId
+        format,
+        background,
+        textColor,
+        textPosition,
+        showArabic,
+        showSecondary,
+        showReference,
+        textType,
+        selectedTafsir,
+        decoration,
+        autoFitText,
+        arabicFontSize,
+        secondaryFontSize,
+        onProgress,
+        onStatusChange,
+      } = options;
+
+      onStatusChange?.('Initializing...');
+      console.log('generateVideo called with:', { includeAudio, reciterId, ayahsCount: ayahsData.length });
+      const size = FORMATS[format];
+
+      // Create a visible canvas for recording (MediaRecorder works better with visible elements)
+      const recordingCanvas = document.createElement('canvas');
+      recordingCanvas.width = size.w;
+      recordingCanvas.height = size.h;
+      recordingCanvas.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
+      document.body.appendChild(recordingCanvas);
+
+      const ctx = recordingCanvas.getContext('2d');
+
+      // Fetch precise timing data from Quran.com API if audio is enabled
+      let verseTimings = null;
+      if (includeAudio && selectedReciter?.quranComId) {
+        onStatusChange?.('Fetching precise timing data...');
+        verseTimings = await fetchVerseTimings(surahNum, selectedReciter.quranComId);
+        if (verseTimings) {
+          console.log('Precise timing data loaded for', Object.keys(verseTimings).length, 'verses');
+        }
+      }
+
+      // Pre-render all ayah frames
+      onStatusChange?.('Rendering frames...');
+      const frameImages = [];
+      const audioBuffers = [];
+
+      console.log('Starting frame rendering, includeAudio:', includeAudio, 'reciterId:', reciterId);
+
+      for (let i = 0; i < ayahsData.length; i++) {
+        const ayah = ayahsData[i];
+        onProgress?.(i / ayahsData.length * 0.2);
+
+        const frameCanvas = document.createElement('canvas');
+        frameCanvas.width = size.w;
+        frameCanvas.height = size.h;
+        const frameCtx = frameCanvas.getContext('2d');
+
+        await renderAyahFrame(frameCtx, {
+          ...ayah,
+          size,
+          background,
+          textColor,
+          textPosition,
+          showArabic,
+          showSecondary,
+          showReference,
+          textType,
+          selectedTafsir,
+          decoration,
+          autoFitText,
+          arabicFontSize,
+          secondaryFontSize,
+        });
+
+        frameImages.push(frameCanvas);
+
+        // Load audio for this ayah if audio is enabled
+        if (includeAudio) {
+          console.log(`Loading audio for ayah ${i + 1}: surah ${surahNum}, ayah ${ayah.ayahNum}`);
+          onStatusChange?.(`Loading audio ${i + 1}/${ayahsData.length}...`);
+          const audioData = await preloadAyahAudio(surahNum, ayah.ayahNum, reciterId);
+          audioBuffers.push(audioData);
+          console.log(`Audio ${i + 1} loaded:`, audioData ? `${audioData.byteLength} bytes` : 'failed');
+        }
+      }
+
+      console.log('Frame rendering complete. Audio buffers:', audioBuffers.length, 'Include audio:', includeAudio);
+      if (includeAudio) {
+        console.log('Audio buffers loaded:', audioBuffers.filter(b => b !== null).length, '/', audioBuffers.length);
+      }
+
+      // Setup audio context early for both decoding and playback
+      let audioContext = null;
+      let audioDestination = null;
+      let hasAudio = false;
+      const decodedAudioBuffers = []; // Store decoded AudioBuffers for playback
+
+      if (includeAudio && audioBuffers.some(b => b !== null)) {
+        try {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+          }
+          audioDestination = audioContext.createMediaStreamDestination();
+          hasAudio = true;
+          console.log('Audio context created for decoding and playback');
+        } catch (e) {
+          console.warn('Audio context setup failed:', e);
+        }
+      }
+
+      // Pre-decode audio buffers and calculate durations using precise API timing
+      onStatusChange?.('Calculating timing...');
+      const durations = [];
+
+      for (let i = 0; i < ayahsData.length; i++) {
+        let duration;
+        let decodedBuffer = null;
+        const ayahNum = ayahsData[i].ayahNum;
+
+        if (includeAudio && audioBuffers[i] && audioContext) {
+          try {
+            // Decode audio buffer once and store it
+            const bufferCopy = audioBuffers[i].slice(0);
+            decodedBuffer = await audioContext.decodeAudioData(bufferCopy);
+
+            // PRIORITY 1: Use precise timing from Quran.com API (most accurate)
+            const preciseDuration = getAyahPreciseDuration(verseTimings, surahNum, ayahNum);
+            if (preciseDuration) {
+              // API provides exact millisecond timing - add small buffer for smoother transitions
+              duration = preciseDuration + 100;
+              console.log(`Ayah ${i + 1} (${surahNum}:${ayahNum}) - API timing: ${preciseDuration}ms, display: ${duration}ms`);
+            } else {
+              // FALLBACK: Use decoded audio duration
+              duration = (decodedBuffer.duration * 1000) + 150;
+              console.log(`Ayah ${i + 1} (${surahNum}:${ayahNum}) - Decoded duration: ${decodedBuffer.duration.toFixed(2)}s, display: ${duration}ms`);
+            }
+          } catch (e) {
+            console.warn(`Failed to decode audio for ayah ${i + 1}:`, e);
+            // FALLBACK: Use text-based duration
+            duration = calculateAyahDuration(ayahsData[i].arabicText, ayahsData[i].secondaryText);
+          }
+        } else {
+          // No audio - use text-based duration
+          duration = calculateAyahDuration(ayahsData[i].arabicText, ayahsData[i].secondaryText);
+        }
+
+        durations.push(duration);
+        decodedAudioBuffers.push(decodedBuffer);
+      }
+
+      const totalDuration = durations.reduce((sum, d) => sum + d, 0) +
+        (ayahsData.length - 1) * TRANSITION_DURATION;
+
+      console.log('Video duration:', totalDuration, 'ms, Frames:', frameImages.length);
+      console.log('Durations per ayah:', durations.map(d => (d/1000).toFixed(1) + 's'));
+      console.log('Decoded audio buffers:', decodedAudioBuffers.filter(b => b !== null).length, '/', decodedAudioBuffers.length);
+      console.log('Using precise API timing:', verseTimings !== null);
+
+      // Draw first frame before starting stream
+      ctx.drawImage(frameImages[0], 0, 0);
+
+      // Create stream with constant FPS
+      const stream = recordingCanvas.captureStream(VIDEO_FPS);
+
+      // Add audio track to stream if available
+      if (hasAudio && audioDestination) {
+        const audioTrack = audioDestination.stream.getAudioTracks()[0];
+        if (audioTrack) {
+          stream.addTrack(audioTrack);
+          console.log('Audio track added to stream');
+        }
+      }
+
+      // Find supported codec - include opus for audio
+      const codecs = hasAudio
+        ? ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm']
+        : ['video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm'];
+      const mimeType = codecs.find(c => MediaRecorder.isTypeSupported(c)) || 'video/webm';
+      console.log('Codec:', mimeType);
+
+      const chunks = [];
+      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2500000 });
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+          console.log('Chunk:', e.data.size);
+        }
+      };
+
+      onStatusChange?.('Recording...');
+
+      return new Promise((resolve, reject) => {
+        recorder.onerror = (e) => {
+          document.body.removeChild(recordingCanvas);
+          reject(new Error('Recording error'));
+        };
+
+        recorder.onstop = () => {
+          document.body.removeChild(recordingCanvas);
+          if (audioContext) audioContext.close();
+
+          console.log('Chunks:', chunks.length);
+          if (chunks.length === 0) {
+            reject(new Error('No video data'));
+            return;
+          }
+
+          const blob = new Blob(chunks, { type: mimeType });
+          console.log('Video size:', blob.size);
+          resolve(blob);
+        };
+
+        // Start with timeslice for periodic data
+        recorder.start(100);
+
+        // Run the animation
+        (async () => {
+          const frameMs = 1000 / VIDEO_FPS;
+          let totalElapsed = 0;
+
+          for (let i = 0; i < frameImages.length; i++) {
+            const duration = durations[i];
+
+            // Play audio for this ayah using pre-decoded buffer
+            if (hasAudio && audioContext && audioDestination && decodedAudioBuffers[i]) {
+              try {
+                const source = audioContext.createBufferSource();
+                source.buffer = decodedAudioBuffers[i];
+                source.connect(audioDestination);
+                source.start(0);
+                console.log(`Playing audio for ayah ${i + 1}, duration: ${decodedAudioBuffers[i].duration.toFixed(2)}s`);
+              } catch (e) {
+                console.warn(`Audio playback failed for ayah ${i + 1}:`, e);
+              }
+            }
+
+            // Show this frame for duration
+            const startT = performance.now();
+            while (performance.now() - startT < duration) {
+              ctx.drawImage(frameImages[i], 0, 0);
+              await sleep(frameMs);
+              totalElapsed += frameMs;
+              onProgress?.(0.2 + (totalElapsed / totalDuration) * 0.8);
+            }
+
+            // Transition
+            if (i < frameImages.length - 1) {
+              const tStart = performance.now();
+              while (performance.now() - tStart < TRANSITION_DURATION) {
+                const p = (performance.now() - tStart) / TRANSITION_DURATION;
+                if (transition === 'none') {
+                  ctx.drawImage(frameImages[i + 1], 0, 0);
+                } else {
+                  applyTransition(ctx, p, transition, frameImages[i], frameImages[i + 1]);
+                }
+                await sleep(frameMs);
+                totalElapsed += frameMs;
+                onProgress?.(0.2 + (totalElapsed / totalDuration) * 0.8);
+              }
+            }
+          }
+
+          // Final frame
+          ctx.drawImage(frameImages[frameImages.length - 1], 0, 0);
+          await sleep(300);
+
+          onStatusChange?.('Finalizing...');
+          recorder.stop();
+        })().catch(reject);
+      });
+    };
+
+    // Render a single ayah frame (similar to main draw function)
+    const renderAyahFrame = async (ctx, options) => {
+      const {
+        arabicText,
+        secondaryText,
+        referenceText,
+        size,
+        background,
+        textColor,
+        textPosition,
+        showArabic,
+        showSecondary,
+        showReference,
+        textType,
+        selectedTafsir,
+        decoration,
+        autoFitText,
+        arabicFontSize,
+        secondaryFontSize,
+      } = options;
+
+      const isTafsir = textType === 'tafsir';
+      let as = arabicFontSize, ss = secondaryFontSize;
+
+      if (autoFitText) {
+        const calculated = calculateFontSizes(size.w, size.h, arabicText, secondaryText, isTafsir);
+        as = calculated.arabicSize;
+        ss = calculated.secondarySize;
+      }
+
+      // Draw background
+      const drawBackground = () => {
+        return new Promise((resolve) => {
+          const imageUrl = background.type === 'api' ? (background.hdurl || background.url) : background.url;
+
+          if ((background.type === 'custom' || background.type === 'api') && imageUrl) {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              const scale = Math.max(size.w / img.width, size.h / img.height);
+              ctx.drawImage(img, (size.w - img.width * scale) / 2, (size.h - img.height * scale) / 2, img.width * scale, img.height * scale);
+              ctx.fillStyle = 'rgba(0,0,0,0.4)';
+              ctx.fillRect(0, 0, size.w, size.h);
+              resolve();
+            };
+            img.onerror = () => {
+              ctx.fillStyle = '#1a1a2e';
+              ctx.fillRect(0, 0, size.w, size.h);
+              resolve();
+            };
+            img.src = imageUrl;
+          } else if (background.colors) {
+            const gradient = ctx.createLinearGradient(0, 0, size.w, size.h);
+            background.colors.forEach((color, i) => gradient.addColorStop(i / (background.colors.length - 1), color));
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size.w, size.h);
+            if (background.pattern) drawPattern(ctx, size.w, size.h, background.pattern, '#C9A227');
+            resolve();
+          } else {
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, size.w, size.h);
+            resolve();
+          }
+        });
+      };
+
+      await drawBackground();
+
+      // Draw text content
+      ctx.textAlign = 'center';
+      const maxWidth = size.w * 0.85;
+      const arabicLineHeight = as * 1.6;
+      const secondaryLineHeight = ss * (isTafsir ? 1.8 : 1.5);
+
+      ctx.font = `${as}px ${FONTS.arabic}`;
+      const arabicLines = showArabic ? wrapArabicText(ctx, arabicText, maxWidth) : [];
+      ctx.font = isTafsir ? `${ss}px ${FONTS.arabic}` : `italic ${ss}px ${FONTS.english}`;
+      const secondaryLines = showSecondary ? (isTafsir ? wrapArabicText(ctx, secondaryText, maxWidth) : wrapLTRText(ctx, secondaryText, maxWidth * 0.95)) : [];
+
+      let totalHeight = 0;
+      if (showArabic) totalHeight += arabicLines.length * arabicLineHeight + 40;
+      if (showSecondary) totalHeight += secondaryLines.length * secondaryLineHeight + 30;
+      if (showReference) totalHeight += 40;
+
+      let y;
+      switch (textPosition) {
+        case 'top': y = size.h * 0.12; break;
+        case 'bottom': y = size.h - totalHeight - size.h * 0.08; break;
+        default: y = (size.h - totalHeight) / 2;
+      }
+
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 20;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+
+      if (showArabic) {
+        ctx.font = `${as}px ${FONTS.arabic}`;
+        ctx.fillStyle = textColor;
+        arabicLines.forEach((line, i) => ctx.fillText(line, size.w / 2, y + i * arabicLineHeight));
+        y += arabicLines.length * arabicLineHeight + 40;
+      }
+
+      if (showSecondary && secondaryText) {
+        ctx.font = isTafsir ? `${ss}px ${FONTS.arabic}` : `italic ${ss}px ${FONTS.english}`;
+        ctx.fillStyle = textColor;
+        const quotedLines = [...secondaryLines];
+        if (!isTafsir && quotedLines.length) {
+          quotedLines[0] = '"' + quotedLines[0];
+          quotedLines[quotedLines.length - 1] += '"';
+        }
+        quotedLines.forEach((line, i) => ctx.fillText(line, size.w / 2, y + i * secondaryLineHeight));
+        y += secondaryLines.length * secondaryLineHeight + 30;
+      }
+
+      if (showReference && referenceText) {
+        ctx.font = `18px ${FONTS.english}`;
+        ctx.fillStyle = textColor;
+        ctx.globalAlpha = 0.9;
+        const refText = isTafsir ? `${referenceText} (${selectedTafsir?.name || 'Tafsir'})` : `${referenceText}`;
+        ctx.fillText(refText, size.w / 2, y + 10);
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      if (decoration !== 'none') drawDecoration(ctx, size.w, size.h, decoration, textColor);
+    };
+
+    // ============================================================================
+    // BACKGROUND IMAGE API SERVICE
+    // ============================================================================
+
+    // NASA APOD API for space images (free, no auth required with DEMO_KEY)
+    const NASA_API_KEY = 'DEMO_KEY'; // Rate limited but works for demo
+    const NASA_APOD_URL = `https://api.nasa.gov/planetary/apod?api_key=${NASA_API_KEY}`;
+
+    // Picsum for nature/landscape images (completely free, no auth)
+    const PICSUM_URL = 'https://picsum.photos';
+
+    // Cache for fetched background images
+    const BG_IMAGES_CACHE_KEY = 'bg_images_cache';
+
+    const fetchSpaceImages = async (count = 8) => {
+      try {
+        // Check cache first
+        const cached = localStorage.getItem(`${BG_IMAGES_CACHE_KEY}_space`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          // Cache for 1 hour
+          if (Date.now() - parsed.timestamp < 3600000) {
+            console.log('Using cached space images');
+            return parsed.images;
+          }
+        }
+
+        console.log('Fetching space images from NASA APOD...');
+        const response = await fetch(`${NASA_APOD_URL}&count=${count}&thumbs=true`);
+        if (!response.ok) throw new Error('NASA API error');
+
+        const data = await response.json();
+        const images = data
+          .filter(item => item.media_type === 'image' && item.url)
+          .map((item, idx) => ({
+            id: `space_${idx}_${Date.now()}`,
+            name: item.title?.substring(0, 20) || 'Space',
+            url: item.url,
+            hdurl: item.hdurl || item.url,
+            type: 'api',
+            source: 'NASA APOD'
+          }));
+
+        // Cache the results
+        localStorage.setItem(`${BG_IMAGES_CACHE_KEY}_space`, JSON.stringify({
+          timestamp: Date.now(),
+          images
+        }));
+
+        return images;
+      } catch (e) {
+        console.warn('Failed to fetch space images:', e);
+        return [];
+      }
+    };
+
+    const fetchNatureImages = async (count = 8) => {
+      try {
+        // Check cache first
+        const cached = localStorage.getItem(`${BG_IMAGES_CACHE_KEY}_nature`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          // Cache for 1 hour
+          if (Date.now() - parsed.timestamp < 3600000) {
+            console.log('Using cached nature images');
+            return parsed.images;
+          }
+        }
+
+        console.log('Generating nature image URLs from Picsum...');
+        // Picsum provides random images - we'll generate URLs with specific seeds for consistency
+        const images = [];
+        const categories = ['nature', 'mountain', 'water', 'forest', 'sky', 'sunset', 'landscape', 'ocean'];
+
+        for (let i = 0; i < count; i++) {
+          const seed = `nature_${i}_${Math.floor(Date.now() / 3600000)}`; // Changes hourly
+          images.push({
+            id: `nature_api_${i}`,
+            name: categories[i % categories.length],
+            // Use seed for consistent images, 1080x1080 for quality
+            url: `${PICSUM_URL}/seed/${seed}/800/800`,
+            hdurl: `${PICSUM_URL}/seed/${seed}/1080/1080`,
+            type: 'api',
+            source: 'Picsum'
+          });
+        }
+
+        // Cache the results
+        localStorage.setItem(`${BG_IMAGES_CACHE_KEY}_nature`, JSON.stringify({
+          timestamp: Date.now(),
+          images
+        }));
+
+        return images;
+      } catch (e) {
+        console.warn('Failed to generate nature images:', e);
+        return [];
+      }
+    };
+
+    // ============================================================================
+    // TAFSIR API SERVICE (spa5k/tafsir_api)
+    // ============================================================================
+
+    const TAFSIR_API_BASE = 'https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir';
+    const TAFSIR_DATA_CACHE_KEY = 'tafsir_data_v2'; // v2 to clear old incorrect cache
+
+    // Curated list of popular tafsirs (subset of 27+ available)
+    // Slugs verified from: https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/editions.json
+    const TAFSIR_EDITIONS = [
+      { id: 'ar-tafsir-muyassar', name: 'التفسير الميسر', author: 'المیسر', language: 'ar', slug: 'ar-tafsir-muyassar' },
+      { id: 'ar-tafsir-ibn-kathir', name: 'تفسير ابن كثير', author: 'Hafiz Ibn Kathir', language: 'ar', slug: 'ar-tafsir-ibn-kathir' },
+      { id: 'ar-tafsir-al-tabari', name: 'تفسير الطبري', author: 'Tabari', language: 'ar', slug: 'ar-tafsir-al-tabari' },
+      { id: 'ar-tafseer-al-qurtubi', name: 'تفسير القرطبي', author: 'Qurtubi', language: 'ar', slug: 'ar-tafseer-al-qurtubi' },
+      { id: 'ar-tafseer-al-saddi', name: 'تفسير السعدي', author: 'Saddi', language: 'ar', slug: 'ar-tafseer-al-saddi' },
+      { id: 'ar-tafsir-al-wasit', name: 'التفسير الوسيط', author: 'Waseet', language: 'ar', slug: 'ar-tafsir-al-wasit' },
+      { id: 'ar-tafsir-al-baghawi', name: 'تفسير البغوي', author: 'Baghawy', language: 'ar', slug: 'ar-tafsir-al-baghawi' },
+      { id: 'ar-tafseer-tanwir-al-miqbas', name: 'تنوير المقباس', author: 'Tanweer', language: 'ar', slug: 'ar-tafseer-tanwir-al-miqbas' },
+      { id: 'en-tafisr-ibn-kathir', name: 'Ibn Kathir (English)', author: 'Hafiz Ibn Kathir', language: 'en', slug: 'en-tafisr-ibn-kathir' },
+      { id: 'en-al-jalalayn', name: 'Al-Jalalayn (English)', author: 'Al-Jalalayn', language: 'en', slug: 'en-al-jalalayn' },
+      { id: 'en-tafsir-maarif-ul-quran', name: 'Maarif-ul-Quran', author: 'Mufti Muhammad Shafi', language: 'en', slug: 'en-tafsir-maarif-ul-quran' },
+      { id: 'en-tafsir-ibn-abbas', name: 'Ibn Abbas (English)', author: 'Tanwîr al-Miqbâs', language: 'en', slug: 'en-tafsir-ibn-abbas' },
+      { id: 'en-kashani-tafsir', name: 'Kashani Tafsir', author: 'Kashani', language: 'en', slug: 'en-kashani-tafsir' },
+    ];
+
+    // Cache for fetched tafsir data per edition per surah
+    const tafsirDataCache = {};
+
+    const fetchTafsirForSurah = async (editionSlug, surahNum) => {
+      const cacheKey = `${editionSlug}_${surahNum}`;
+
+      // Check memory cache
+      if (tafsirDataCache[cacheKey]) {
+        console.log(`Tafsir cache hit (memory): ${cacheKey}`);
+        return tafsirDataCache[cacheKey];
+      }
+
+      // Check localStorage cache
+      try {
+        const cached = localStorage.getItem(`${TAFSIR_DATA_CACHE_KEY}_${cacheKey}`);
+        if (cached) {
+          const data = JSON.parse(cached);
+          tafsirDataCache[cacheKey] = data;
+          console.log(`Tafsir cache hit (localStorage): ${cacheKey}`);
+          return data;
+        }
+      } catch (e) {
+        console.warn('Tafsir cache read error:', e);
+      }
+
+      // Fetch from API
+      const url = `${TAFSIR_API_BASE}/${editionSlug}/${surahNum}.json`;
+      console.log(`Fetching tafsir from: ${url}`);
+
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          console.warn(`Tafsir not available: ${response.status} for ${editionSlug} surah ${surahNum}`);
+          return null;
+        }
+        const data = await response.json();
+        console.log(`Tafsir fetched successfully for ${editionSlug} surah ${surahNum}`, data);
+
+        // Transform to simpler format: object of tafsir texts indexed by ayah number
+        const tafsirTexts = {};
+        if (data.ayahs) {
+          data.ayahs.forEach(v => {
+            tafsirTexts[v.ayah] = v.text || '';
+          });
+        } else if (data.verses) {
+          data.verses.forEach(v => {
+            const ayahNum = v.verseNumber || v.numberInSurah || v.ayah;
+            tafsirTexts[ayahNum] = v.text || v.tafsir || '';
+          });
+        }
+
+        console.log(`Transformed tafsir data:`, Object.keys(tafsirTexts).length, 'ayahs');
+
+        // Cache in memory and localStorage
+        tafsirDataCache[cacheKey] = tafsirTexts;
+        try {
+          localStorage.setItem(`${TAFSIR_DATA_CACHE_KEY}_${cacheKey}`, JSON.stringify(tafsirTexts));
+        } catch (e) {
+          console.warn('Tafsir cache write error:', e);
+        }
+
+        return tafsirTexts;
+      } catch (e) {
+        console.error(`Failed to fetch tafsir ${editionSlug} for surah ${surahNum}:`, e);
+        return null;
+      }
+    };
+
+    // ============================================================================
+    // QURAN API SERVICE
+    // ============================================================================
+
+    const API_BASE = 'https://api.alquran.cloud/v1';
+    const CACHE_KEY = 'quran_data_cache';
+    const CACHE_VERSION = '1.4'; // Incremented to force fresh fetch with correct ayahCount
+
+    const getCachedData = () => {
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed.version === CACHE_VERSION && parsed.data) {
+            // Validate cache integrity - check if we have all surahs
+            const { surahs, ayahs } = parsed.data;
+            if (surahs && surahs.length === 114 && ayahs && Object.keys(ayahs).length === 114) {
+              // Also verify first and last surah have correct ayah counts
+              if (ayahs[1]?.length === 7 && ayahs[114]?.length === 6) {
+                console.log('Cache validated: 114 surahs loaded');
+                return parsed.data;
+              }
+            }
+            console.warn('Cache corrupted or incomplete, will refetch');
+            localStorage.removeItem(CACHE_KEY);
+          }
+        }
+      } catch (e) {
+        console.warn('Cache read error:', e);
+        localStorage.removeItem(CACHE_KEY);
+      }
+      return null;
+    };
+
+    const setCachedData = (data) => {
+      try {
+        const jsonStr = JSON.stringify({
+          version: CACHE_VERSION,
+          timestamp: Date.now(),
+          data
+        });
+        console.log(`Caching Quran data: ${(jsonStr.length / 1024 / 1024).toFixed(2)} MB`);
+        localStorage.setItem(CACHE_KEY, jsonStr);
+        console.log('Cache saved successfully');
+      } catch (e) {
+        console.warn('Cache write error (storage may be full):', e);
+        // Try to clear old caches to make room
+        try {
+          localStorage.removeItem(CACHE_KEY);
+        } catch (e2) {
+          console.warn('Could not clear cache:', e2);
+        }
+      }
+    };
+
+    const fetchQuranData = async (forceRefresh = false) => {
+      // Check cache first
+      if (!forceRefresh) {
+        const cached = getCachedData();
+        if (cached) {
+          console.log('Using cached Quran data');
+          return cached;
+        }
+      }
+
+      console.log('Fetching Quran data from API...');
+
+      // Fetch Arabic text (Uthmani script)
+      const arabicRes = await fetch(`${API_BASE}/quran/quran-uthmani`);
+      if (!arabicRes.ok) throw new Error('Failed to fetch Arabic Quran');
+      const arabicData = await arabicRes.json();
+
+      // Fetch English translation (Sahih International)
+      const englishRes = await fetch(`${API_BASE}/quran/en.sahih`);
+      if (!englishRes.ok) throw new Error('Failed to fetch English translation');
+      const englishData = await englishRes.json();
+
+      // Fetch Arabic Tafsir (التفسير الميسر)
+      let tafsirData = null;
+      try {
+        const tafsirRes = await fetch(`${API_BASE}/quran/ar.muyassar`);
+        if (tafsirRes.ok) {
+          tafsirData = await tafsirRes.json();
+        }
+      } catch (e) {
+        console.warn('Tafsir not available:', e);
+      }
+
+      const arabicSurahs = arabicData.data.surahs;
+      const englishSurahs = englishData.data.surahs;
+      const tafsirSurahs = tafsirData?.data?.surahs || null;
+
+      // Transform to app format
+      const surahs = [];
+      const ayahs = {};
+      const tafsir = {};
+
+      arabicSurahs.forEach((surah, index) => {
+        const englishSurah = englishSurahs[index];
+        const tafsirSurah = tafsirSurahs ? tafsirSurahs[index] : null;
+
+        surahs.push({
+          number: surah.number,
+          name: surah.englishName,
+          arabicName: surah.name,
+          englishNameTranslation: surah.englishNameTranslation,
+          ayahCount: surah.numberOfAyahs,
+          revelationType: surah.revelationType
+        });
+
+        ayahs[surah.number] = surah.ayahs.map((ayah, ayahIndex) => ({
+          n: ayah.numberInSurah,
+          a: ayah.text,
+          t: englishSurah.ayahs[ayahIndex]?.text || ''
+        }));
+
+        if (tafsirSurah && tafsirSurah.ayahs) {
+          tafsir[surah.number] = tafsirSurah.ayahs.map(ayah => ayah.text);
+        }
+      });
+
+      const data = { surahs, ayahs, tafsir };
+      setCachedData(data);
+      console.log('Quran data loaded:', surahs.length, 'surahs');
+      return data;
+    };
+
+    // ============================================================================
+    // LOADING COMPONENT
+    // ============================================================================
+
+    function LoadingScreen() {
+      return (
+        <div className="loading-screen">
+          <div className="loading-spinner"></div>
+          <div className="loading-text">Loading Quran Data</div>
+          <div className="loading-sub">Fetching from AlQuran.cloud API...</div>
+        </div>
+      );
+    }
+
+    // ============================================================================
+    // ERROR COMPONENT
+    // ============================================================================
+
+    function ErrorScreen({ error, onRetry }) {
+      return (
+        <div className="error-screen">
+          <div className="error-icon">⚠️</div>
+          <div className="error-title">Failed to Load Quran Data</div>
+          <div className="error-message">{error}</div>
+          <button className="retry-btn" onClick={onRetry}>Try Again</button>
+        </div>
+      );
+    }
+
+    // ============================================================================
+    // MAIN APP
+    // ============================================================================
+
+    function App() {
+      // Data loading state
+      const [quranData, setQuranData] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+
+      // Load Quran data on mount
+      useEffect(() => {
+        loadData();
+      }, []);
+
+      const loadData = async (forceRefresh = false) => {
+        setLoading(true);
+        setError(null);
+        try {
+          const data = await fetchQuranData(forceRefresh);
+          setQuranData(data);
+        } catch (e) {
+          console.error('Failed to load Quran data:', e);
+          setError(e.message || 'Failed to load Quran data. Please check your internet connection.');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // Show loading screen
+      if (loading) {
+        return <LoadingScreen />;
+      }
+
+      // Show error screen
+      if (error || !quranData) {
+        return <ErrorScreen error={error || 'Unknown error'} onRetry={() => loadData(true)} />;
+      }
+
+      // Render main app with data
+      return <MainApp quranData={quranData} />;
+    }
+
+    // ============================================================================
+    // MAIN APP CONTENT (with data)
+    // ============================================================================
+
+    function MainApp({ quranData }) {
+      const { surahs: surahInfo, ayahs: quranAyahs, tafsir: quranTafsir } = quranData;
+
+      const [activeTab, setActiveTab] = useState('create');
+      const [surahNum, setSurahNum] = useState(1);
+      const [startAyah, setStartAyah] = useState(1);
+      const [endAyah, setEndAyah] = useState(1);
+      const [searchTerm, setSearchTerm] = useState('');
+
+      // Tafsir state
+      const [selectedTafsir, setSelectedTafsir] = useState(TAFSIR_EDITIONS[0]);
+      const [currentTafsirData, setCurrentTafsirData] = useState({});
+      const [tafsirLoading, setTafsirLoading] = useState(false);
+
+      // Background images from API
+      const [spaceImages, setSpaceImages] = useState([]);
+      const [natureApiImages, setNatureApiImages] = useState([]);
+      const [bgImagesLoading, setBgImagesLoading] = useState(false);
+
+      const [bgCategory, setBgCategory] = useState('nature');
+      const [background, setBackground] = useState(BACKGROUNDS.nature[0]);
+      const [textColor, setTextColor] = useState('#FFFFFF');
+      const [customColor, setCustomColor] = useState('#FFFFFF');
+      const [arabicFontSize, setArabicFontSize] = useState(48);
+      const [secondaryFontSize, setSecondaryFontSize] = useState(24);
+      const [autoFitText, setAutoFitText] = useState(true);
+      const [textPosition, setTextPosition] = useState('center');
+      const [showArabic, setShowArabic] = useState(true);
+      const [showSecondary, setShowSecondary] = useState(true);
+      const [showReference, setShowReference] = useState(true);
+      const [textType, setTextType] = useState('english');
+      const [decoration, setDecoration] = useState('none');
+      const [format, setFormat] = useState('square');
+      const [showShareModal, setShowShareModal] = useState(false);
+      const [savedDesigns, setSavedDesigns] = useState(() => storage.get('ayahCanvas_saved', []));
+
+      // Video generation state
+      const [outputMode, setOutputMode] = useState('image'); // 'image' or 'video'
+      const [videoTransition, setVideoTransition] = useState('fade');
+      const [includeAudio, setIncludeAudio] = useState(false);
+      const [selectedReciter, setSelectedReciter] = useState(RECITERS[0]);
+      const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+      const [videoProgress, setVideoProgress] = useState(0);
+      const [videoStatus, setVideoStatus] = useState('');
+      const [videoPreviewUrl, setVideoPreviewUrl] = useState(null);
+      const [showVideoPreview, setShowVideoPreview] = useState(false);
+
+      const canvasRef = useRef(null);
+      const fileInputRef = useRef(null);
+      const imageCache = useRef(new Map());
+
+      useEffect(() => { storage.set('ayahCanvas_saved', savedDesigns); }, [savedDesigns]);
+
+      // Load background images from APIs on mount
+      useEffect(() => {
+        const loadBgImages = async () => {
+          setBgImagesLoading(true);
+          try {
+            const [space, nature] = await Promise.all([
+              fetchSpaceImages(8),
+              fetchNatureImages(8)
+            ]);
+            setSpaceImages(space);
+            setNatureApiImages(nature);
+          } catch (e) {
+            console.warn('Failed to load background images:', e);
+          } finally {
+            setBgImagesLoading(false);
+          }
+        };
+        loadBgImages();
+      }, []);
+
+      // Function to refresh background images
+      const refreshBgImages = useCallback(async (category) => {
+        setBgImagesLoading(true);
+        try {
+          // Clear cache to force refresh
+          if (category === 'space' || category === 'all') {
+            localStorage.removeItem(`${BG_IMAGES_CACHE_KEY}_space`);
+            const space = await fetchSpaceImages(8);
+            setSpaceImages(space);
+          }
+          if (category === 'photos' || category === 'all') {
+            localStorage.removeItem(`${BG_IMAGES_CACHE_KEY}_nature`);
+            const nature = await fetchNatureImages(8);
+            setNatureApiImages(nature);
+          }
+        } catch (e) {
+          console.warn('Failed to refresh background images:', e);
+        } finally {
+          setBgImagesLoading(false);
+        }
+      }, []);
+
+      const filteredSurahs = useMemo(() => {
+        if (!searchTerm) return surahInfo;
+        const term = searchTerm.toLowerCase();
+        return surahInfo.filter(s => s.name.toLowerCase().includes(term) || s.arabicName.includes(searchTerm) || String(s.number).includes(searchTerm));
+      }, [searchTerm]);
+
+      const currentSurah = useMemo(() => {
+        const surah = surahInfo.find(s => s.number === surahNum);
+        console.log('Current surah:', surahNum, surah?.name, 'ayahCount:', surah?.ayahCount);
+        return surah;
+      }, [surahNum, surahInfo]);
+
+      const ayahs = useMemo(() => {
+        const surahAyahs = quranAyahs[surahNum] || [];
+        console.log('Ayahs for surah', surahNum, ':', surahAyahs.length, 'ayahs loaded');
+        return surahAyahs;
+      }, [surahNum, quranAyahs]);
+
+      // Fetch tafsir when surah or edition changes
+      useEffect(() => {
+        const loadTafsir = async () => {
+          if (textType !== 'tafsir') return;
+          setTafsirLoading(true);
+          const data = await fetchTafsirForSurah(selectedTafsir.slug, surahNum);
+          setCurrentTafsirData(data || {});
+          setTafsirLoading(false);
+        };
+        loadTafsir();
+      }, [surahNum, selectedTafsir, textType]);
+
+      const tafsirAvailable = useMemo(() => Object.keys(currentTafsirData).length > 0 || textType !== 'tafsir', [currentTafsirData, textType]);
+
+      useEffect(() => { setStartAyah(1); setEndAyah(1); }, [surahNum]);
+
+      const selectedAyahs = useMemo(() => ayahs.filter(a => a.n >= startAyah && a.n <= endAyah), [ayahs, startAyah, endAyah]);
+      const arabicText = useMemo(() => selectedAyahs.map(a => a.a.trim() + createAyahMarker(a.n)).join(' '), [selectedAyahs]);
+      const translationText = useMemo(() => selectedAyahs.map(a => a.t).join(' '), [selectedAyahs]);
+      const tafsirText = useMemo(() => {
+        if (Object.keys(currentTafsirData).length === 0) return '';
+        return selectedAyahs.map(a => currentTafsirData[a.n] || '').filter(t => t).join(' ');
+      }, [selectedAyahs, currentTafsirData]);
+
+      const secondaryText = textType === 'tafsir' ? tafsirText : translationText;
+      const referenceText = useMemo(() => {
+        if (!currentSurah) return '';
+        return startAyah === endAyah ? `${currentSurah.name} ${startAyah}` : `${currentSurah.name} ${startAyah}-${endAyah}`;
+      }, [currentSurah, startAyah, endAyah]);
+
+      const selectRandom = useCallback(() => {
+        const randomSurahNum = Math.floor(Math.random() * 114) + 1;
+        const randomSurahAyahs = quranAyahs[randomSurahNum] || [];
+        setSurahNum(randomSurahNum);
+        const randomAyah = Math.floor(Math.random() * randomSurahAyahs.length) + 1;
+        requestAnimationFrame(() => { setStartAyah(randomAyah); setEndAyah(randomAyah); });
+      }, [quranAyahs]);
+
+      const selectAll = useCallback(() => {
+        if (ayahs.length > 0) { setStartAyah(1); setEndAyah(ayahs.length); }
+      }, [ayahs.length]);
+
+      const handleUpload = useCallback((e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => setBackground({ id: 'custom', type: 'custom', url: event.target.result });
+        reader.readAsDataURL(file);
+      }, []);
+
+      // Handle video generation
+      const handleGenerateVideo = useCallback(async () => {
+        if (isGeneratingVideo) return;
+
+        // Warn if selecting too many ayahs
+        const ayahCount = endAyah - startAyah + 1;
+        if (ayahCount > 20) {
+          if (!confirm(`You selected ${ayahCount} ayahs. This may take a while to generate. Continue?`)) {
+            return;
+          }
+        }
+
+        setIsGeneratingVideo(true);
+        setVideoProgress(0);
+        setVideoStatus('Starting...');
+
+        try {
+          // Prepare ayahs data for video generation
+          const ayahsData = selectedAyahs.map(a => ({
+            ayahNum: a.n,
+            arabicText: a.a.trim() + createAyahMarker(a.n),
+            secondaryText: textType === 'tafsir' ? (currentTafsirData[a.n] || '') : a.t,
+            referenceText: `${currentSurah?.name || ''} ${a.n}`,
+          }));
+
+          const videoBlob = await generateVideo({
+            ayahsData,
+            surahNum,
+            transition: videoTransition,
+            includeAudio,
+            reciterId: selectedReciter.id,
+            selectedReciter, // Pass full reciter object for quranComId
+            format,
+            background,
+            textColor,
+            textPosition,
+            showArabic,
+            showSecondary,
+            showReference,
+            textType,
+            selectedTafsir,
+            decoration,
+            autoFitText,
+            arabicFontSize,
+            secondaryFontSize,
+            onProgress: setVideoProgress,
+            onStatusChange: setVideoStatus,
+          });
+
+          // Clean up previous preview URL
+          if (videoPreviewUrl) {
+            URL.revokeObjectURL(videoPreviewUrl);
+          }
+
+          // Create preview URL and show preview modal
+          const url = URL.createObjectURL(videoBlob);
+          setVideoPreviewUrl(url);
+          setShowVideoPreview(true);
+          setVideoStatus('Complete!');
+        } catch (e) {
+          console.error('Video generation failed:', e);
+          alert('Video generation failed: ' + e.message);
+          setVideoStatus('Failed');
+        } finally {
+          setIsGeneratingVideo(false);
+        }
+      }, [isGeneratingVideo, endAyah, startAyah, selectedAyahs, textType, currentTafsirData, currentSurah, surahNum, videoTransition, includeAudio, selectedReciter, format, background, textColor, textPosition, showArabic, showSecondary, showReference, selectedTafsir, decoration, autoFitText, arabicFontSize, secondaryFontSize, referenceText, videoPreviewUrl]);
+
+      // Download video from preview
+      const downloadVideo = useCallback(() => {
+        if (!videoPreviewUrl) return;
+        const link = document.createElement('a');
+        link.download = `ayah-${referenceText.replace(/\s+/g, '-')}.webm`;
+        link.href = videoPreviewUrl;
+        link.click();
+      }, [videoPreviewUrl, referenceText]);
+
+      // Close video preview and clean up
+      const closeVideoPreview = useCallback(() => {
+        setShowVideoPreview(false);
+        // Don't revoke URL yet - user might want to download
+      }, []);
+
+      const draw = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas || !ayahs.length) return;
+
+        const ctx = canvas.getContext('2d');
+        const size = FORMATS[format];
+        canvas.width = size.w;
+        canvas.height = size.h;
+
+        const isTafsir = textType === 'tafsir';
+        let as = arabicFontSize, ss = secondaryFontSize;
+        if (autoFitText) {
+          const calculated = calculateFontSizes(size.w, size.h, arabicText, secondaryText, isTafsir);
+          as = calculated.arabicSize;
+          ss = calculated.secondarySize;
+        }
+
+        const drawContent = () => {
+          ctx.textAlign = 'center';
+          const maxWidth = size.w * 0.85;
+          const arabicLineHeight = as * 1.6;
+          const secondaryLineHeight = ss * (isTafsir ? 1.8 : 1.5);
+
+          ctx.font = `${as}px ${FONTS.arabic}`;
+          const arabicLines = showArabic ? wrapArabicText(ctx, arabicText, maxWidth) : [];
+          ctx.font = isTafsir ? `${ss}px ${FONTS.arabic}` : `italic ${ss}px ${FONTS.english}`;
+          const secondaryLines = showSecondary ? (isTafsir ? wrapArabicText(ctx, secondaryText, maxWidth) : wrapLTRText(ctx, secondaryText, maxWidth * 0.95)) : [];
+
+          let totalHeight = 0;
+          if (showArabic) totalHeight += arabicLines.length * arabicLineHeight + 40;
+          if (showSecondary) totalHeight += secondaryLines.length * secondaryLineHeight + 30;
+          if (showReference) totalHeight += 40;
+
+          let y;
+          switch (textPosition) {
+            case 'top': y = size.h * 0.12; break;
+            case 'bottom': y = size.h - totalHeight - size.h * 0.08; break;
+            default: y = (size.h - totalHeight) / 2;
+          }
+
+          ctx.shadowColor = 'rgba(0,0,0,0.8)';
+          ctx.shadowBlur = 20;
+          ctx.shadowOffsetX = 2;
+          ctx.shadowOffsetY = 2;
+
+          if (showArabic) {
+            ctx.font = `${as}px ${FONTS.arabic}`;
+            ctx.fillStyle = textColor;
+            arabicLines.forEach((line, i) => ctx.fillText(line, size.w / 2, y + i * arabicLineHeight));
+            y += arabicLines.length * arabicLineHeight + 40;
+          }
+
+          if (showSecondary && secondaryText) {
+            ctx.font = isTafsir ? `${ss}px ${FONTS.arabic}` : `italic ${ss}px ${FONTS.english}`;
+            ctx.fillStyle = textColor;
+            const quotedLines = [...secondaryLines];
+            if (!isTafsir && quotedLines.length) {
+              quotedLines[0] = '"' + quotedLines[0];
+              quotedLines[quotedLines.length - 1] += '"';
+            }
+            quotedLines.forEach((line, i) => ctx.fillText(line, size.w / 2, y + i * secondaryLineHeight));
+            y += secondaryLines.length * secondaryLineHeight + 30;
+          }
+
+          if (showReference) {
+            ctx.font = `18px ${FONTS.english}`;
+            ctx.fillStyle = textColor;
+            ctx.globalAlpha = 0.9;
+            const refText = isTafsir ? `— ${referenceText} (${selectedTafsir.name})` : `— ${referenceText}`;
+            ctx.fillText(refText, size.w / 2, y + 10);
+            ctx.globalAlpha = 1;
+          }
+
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          if (decoration !== 'none') drawDecoration(ctx, size.w, size.h, decoration, textColor);
+        };
+
+        // Handle image backgrounds (custom uploads or API images)
+        const imageUrl = background.type === 'api' ? (background.hdurl || background.url) : background.url;
+        if ((background.type === 'custom' || background.type === 'api') && imageUrl) {
+          let img = imageCache.current.get(imageUrl);
+          if (img && img.complete) {
+            const scale = Math.max(size.w / img.width, size.h / img.height);
+            ctx.drawImage(img, (size.w - img.width * scale) / 2, (size.h - img.height * scale) / 2, img.width * scale, img.height * scale);
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.fillRect(0, 0, size.w, size.h);
+            drawContent();
+          } else {
+            img = new Image();
+            img.crossOrigin = 'anonymous'; // Enable CORS for API images
+            img.onload = () => {
+              imageCache.current.set(imageUrl, img);
+              const scale = Math.max(size.w / img.width, size.h / img.height);
+              ctx.drawImage(img, (size.w - img.width * scale) / 2, (size.h - img.height * scale) / 2, img.width * scale, img.height * scale);
+              ctx.fillStyle = 'rgba(0,0,0,0.4)';
+              ctx.fillRect(0, 0, size.w, size.h);
+              drawContent();
+            };
+            img.onerror = () => { ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, size.w, size.h); drawContent(); };
+            img.src = imageUrl;
+          }
+        } else if (background.colors) {
+          const gradient = ctx.createLinearGradient(0, 0, size.w, size.h);
+          background.colors.forEach((color, i) => gradient.addColorStop(i / (background.colors.length - 1), color));
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, size.w, size.h);
+          if (background.pattern) drawPattern(ctx, size.w, size.h, background.pattern, '#C9A227');
+          drawContent();
+        }
+      }, [ayahs, format, textType, arabicFontSize, secondaryFontSize, autoFitText, arabicText, secondaryText, showArabic, showSecondary, showReference, textPosition, textColor, referenceText, decoration, background, selectedTafsir]);
+
+      useEffect(() => { draw(); }, [draw]);
+
+      const download = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const link = document.createElement('a');
+        link.download = `ayah-${referenceText.replace(/\s+/g, '-')}.png`;
+        link.href = canvas.toDataURL('image/png', 1.0);
+        link.click();
+      }, [referenceText]);
+
+      const saveDesign = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const newDesign = {
+          id: Date.now(),
+          thumb: canvas.toDataURL('image/png', 0.5),
+          surahNum, startAyah, endAyah,
+          settings: { bgCategory, background, textColor, arabicFontSize, secondaryFontSize, autoFitText, textPosition, showArabic, showSecondary, showReference, textType, decoration, format, selectedTafsir }
+        };
+        setSavedDesigns(prev => [...prev, newDesign]);
+      }, [surahNum, startAyah, endAyah, bgCategory, background, textColor, arabicFontSize, secondaryFontSize, autoFitText, textPosition, showArabic, showSecondary, showReference, textType, decoration, format, selectedTafsir]);
+
+      const loadDesign = useCallback((design) => {
+        setSurahNum(design.surahNum);
+        requestAnimationFrame(() => { setStartAyah(design.startAyah); setEndAyah(design.endAyah); });
+        const s = design.settings;
+        setBgCategory(s.bgCategory);
+        setBackground(s.background);
+        setTextColor(s.textColor);
+        setArabicFontSize(s.arabicFontSize);
+        setSecondaryFontSize(s.secondaryFontSize);
+        setAutoFitText(s.autoFitText);
+        setTextPosition(s.textPosition);
+        setShowArabic(s.showArabic);
+        setShowSecondary(s.showSecondary);
+        setShowReference(s.showReference);
+        setTextType(s.textType || 'english');
+        setDecoration(s.decoration);
+        setFormat(s.format);
+        if (s.selectedTafsir) setSelectedTafsir(s.selectedTafsir);
+        setActiveTab('create');
+      }, []);
+
+      const deleteDesign = useCallback((id, e) => {
+        e.stopPropagation();
+        setSavedDesigns(prev => prev.filter(d => d.id !== id));
+      }, []);
+
+      const renderBgPreview = (bg) => (
+        <div style={{ width: '100%', height: '100%', background: `linear-gradient(135deg, ${bg.colors.join(', ')})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {bg.pattern && <span style={{ fontSize: '1.2rem', opacity: 0.5 }}>☪</span>}
+        </div>
+      );
+
+      return (
+        <div className="app">
+          <header className="header"><div className="header-content">
+            <div className="logo"><div className="logo-icon">☪</div><span className="logo-text">Ayah Canvas</span></div>
+            <nav className="nav-tabs">
+              <button className={`nav-tab ${activeTab === 'create' ? 'active' : ''}`} onClick={() => setActiveTab('create')}>✨ Create</button>
+              <button className={`nav-tab ${activeTab === 'saved' ? 'active' : ''}`} onClick={() => setActiveTab('saved')}>💾 Saved ({savedDesigns.length})</button>
+            </nav>
+          </div></header>
+
+          {activeTab === 'create' && (
+            <main className="main">
+              <aside className="panel">
+                <section className="section">
+                  <h3 className="section-title"><span>📖</span> Select Ayah Range</h3>
+                  <div className="search-box">
+                    <span className="search-icon">🔍</span>
+                    <input className="input" placeholder="Search surah..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ paddingLeft: '2.5rem' }} />
+                  </div>
+                  <div className="row">
+                    <select value={surahNum} onChange={e => setSurahNum(parseInt(e.target.value))} style={{ flex: 2 }}>
+                      {filteredSurahs.map(s => <option key={s.number} value={s.number}>{s.number}. {s.name} ({s.arabicName}) - {quranAyahs[s.number]?.length || 0} ayahs</option>)}
+                    </select>
+                    <button className="btn btn-primary btn-icon" onClick={selectRandom} title="Random Ayah">🎲</button>
+                  </div>
+                  <div className="range-sel">
+                    <div className="range-col">
+                      <label className="range-label">From Ayah</label>
+                      <select value={startAyah} onChange={e => { const val = parseInt(e.target.value); setStartAyah(val); if (val > endAyah) setEndAyah(val); }}>
+                        {Array.from({ length: ayahs.length || 1 }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </div>
+                    <div className="range-col">
+                      <label className="range-label">To Ayah</label>
+                      <select value={endAyah} onChange={e => setEndAyah(parseInt(e.target.value))}>
+                        {Array.from({ length: (ayahs.length || 1) - startAyah + 1 }, (_, i) => startAyah + i).map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <button className="btn btn-secondary" onClick={selectAll} style={{ width: '100%' }}>📜 Select Entire Surah ({ayahs.length} ayahs)</button>
+                  {ayahs.length > 0 && (
+                    <div className="preview-box">
+                      <div className="ayah-count">{endAyah - startAyah + 1} ayah{endAyah > startAyah ? 's' : ''} selected</div>
+                      <p className="arabic">{arabicText.substring(0, 250)}{arabicText.length > 250 ? '...' : ''}</p>
+                      {textType === 'english' ? (
+                        <p className="translation">"{translationText.substring(0, 300)}{translationText.length > 300 ? '...' : ''}"</p>
+                      ) : tafsirLoading ? (
+                        <p className="tafsir-text" style={{ opacity: 0.6 }}>Loading tafsir...</p>
+                      ) : tafsirText ? (
+                        <p className="tafsir-text">{tafsirText.substring(0, 300)}{tafsirText.length > 300 ? '...' : ''}</p>
+                      ) : (
+                        <p className="tafsir-text" style={{ opacity: 0.6 }}>Tafsir not available for this selection</p>
+                      )}
+                      <p className="reference">— {referenceText}{textType === 'tafsir' && ` (${selectedTafsir.name})`}</p>
+                    </div>
+                  )}
+                </section>
+
+                <section className="section">
+                  <h3 className="section-title"><span>📝</span> Text Type</h3>
+                  <div className="text-type-tabs">
+                    <button className={`text-type-tab ${textType === 'english' ? 'active' : ''}`} onClick={() => setTextType('english')}>🌐 English Translation</button>
+                    <button className={`text-type-tab ${textType === 'tafsir' ? 'active' : ''}`} onClick={() => setTextType('tafsir')}>📗 Tafsir</button>
+                  </div>
+                  {textType === 'tafsir' && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', opacity: 0.8 }}>Select Tafsir Edition:</label>
+                      <select
+                        value={selectedTafsir.id}
+                        onChange={e => setSelectedTafsir(TAFSIR_EDITIONS.find(t => t.id === e.target.value))}
+                        style={{ width: '100%' }}
+                      >
+                        <optgroup label="Arabic Tafsirs">
+                          {TAFSIR_EDITIONS.filter(t => t.language === 'ar').map(t => (
+                            <option key={t.id} value={t.id}>{t.name} - {t.author}</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="English Tafsirs">
+                          {TAFSIR_EDITIONS.filter(t => t.language === 'en').map(t => (
+                            <option key={t.id} value={t.id}>{t.name} - {t.author}</option>
+                          ))}
+                        </optgroup>
+                      </select>
+                      {tafsirLoading && (
+                        <div className="tafsir-note" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span>
+                          Loading tafsir...
+                        </div>
+                      )}
+                      {!tafsirLoading && textType === 'tafsir' && Object.keys(currentTafsirData).length > 0 && (
+                        <div className="tafsir-note">{selectedTafsir.name} - {selectedTafsir.author}</div>
+                      )}
+                      {!tafsirLoading && textType === 'tafsir' && Object.keys(currentTafsirData).length === 0 && (
+                        <div className="tafsir-note" style={{ background: 'rgba(255,100,100,0.1)' }}>
+                          Tafsir not available for this surah. Try another edition.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+
+                <section className="section">
+                  <h3 className="section-title"><span>🎬</span> Output Mode</h3>
+                  <div className="text-type-tabs">
+                    <button className={`text-type-tab ${outputMode === 'image' ? 'active' : ''}`} onClick={() => setOutputMode('image')}>
+                      🖼️ Image
+                    </button>
+                    <button className={`text-type-tab ${outputMode === 'video' ? 'active' : ''}`} onClick={() => setOutputMode('video')}>
+                      🎥 Video
+                    </button>
+                  </div>
+
+                  {outputMode === 'video' && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      {/* Transition selector */}
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', opacity: 0.8 }}>Transition Effect:</label>
+                      <select
+                        value={videoTransition}
+                        onChange={e => setVideoTransition(e.target.value)}
+                        style={{ width: '100%', marginBottom: '0.75rem' }}
+                      >
+                        {TRANSITIONS.map(t => (
+                          <option key={t.id} value={t.id}>{t.icon} {t.name}</option>
+                        ))}
+                      </select>
+
+                      {/* Audio toggle */}
+                      <div className="toggle-row" style={{ marginBottom: '0.75rem' }}>
+                        <span className="toggle-label">Include Audio Recitation</span>
+                        <div className={`toggle ${includeAudio ? 'on' : ''}`} onClick={() => setIncludeAudio(!includeAudio)} />
+                      </div>
+
+                      {/* Reciter selection */}
+                      {includeAudio && (
+                        <div style={{ marginBottom: '0.75rem' }}>
+                          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', opacity: 0.8 }}>Reciter:</label>
+                          <select
+                            value={selectedReciter.id}
+                            onChange={e => setSelectedReciter(RECITERS.find(r => r.id === e.target.value))}
+                            style={{ width: '100%' }}
+                          >
+                            {RECITERS.map(r => (
+                              <option key={r.id} value={r.id}>{r.name} ({r.arabicName})</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Info note */}
+                      <div className="tafsir-note" style={{ fontSize: '0.75rem' }}>
+                        Video will show each ayah with transitions. Duration is based on text length{includeAudio ? ' or audio length' : ''}.
+                        {endAyah - startAyah + 1 > 1 && ` (${endAyah - startAyah + 1} ayahs)`}
+                      </div>
+                    </div>
+                  )}
+                </section>
+
+                <section className="section">
+                  <h3 className="section-title"><span>🖼️</span> Background</h3>
+                  <div className="bg-tabs">
+                    {Object.keys(BACKGROUNDS).map(c => (
+                      <button key={c} className={`bg-tab ${bgCategory === c ? 'active' : ''}`} onClick={() => setBgCategory(c)}>
+                        {c.charAt(0).toUpperCase() + c.slice(1)}
+                      </button>
+                    ))}
+                    <button className={`bg-tab ${bgCategory === 'space' ? 'active' : ''}`} onClick={() => setBgCategory('space')}>
+                      🚀 Space
+                    </button>
+                    <button className={`bg-tab ${bgCategory === 'photos' ? 'active' : ''}`} onClick={() => setBgCategory('photos')}>
+                      📷 Photos
+                    </button>
+                  </div>
+
+                  {/* Gradient backgrounds */}
+                  {BACKGROUNDS[bgCategory] && (
+                    <div className="bg-grid">
+                      {BACKGROUNDS[bgCategory].map(bg => (
+                        <div key={bg.id} className={`bg-opt ${background.id === bg.id ? 'selected' : ''}`} onClick={() => setBackground(bg)} title={bg.name}>
+                          {renderBgPreview(bg)}
+                        </div>
+                      ))}
+                      <div className="bg-opt upload" onClick={() => fileInputRef.current?.click()}>
+                        <span>📤</span><span>Upload</span>
+                        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUpload} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Space images from NASA */}
+                  {bgCategory === 'space' && (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>NASA Astronomy Picture of the Day</span>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
+                          onClick={() => refreshBgImages('space')}
+                          disabled={bgImagesLoading}
+                        >
+                          {bgImagesLoading ? '...' : '🔄 Refresh'}
+                        </button>
+                      </div>
+                      <div className="bg-grid">
+                        {spaceImages.length === 0 && bgImagesLoading && (
+                          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '1rem', opacity: 0.7 }}>Loading space images...</div>
+                        )}
+                        {spaceImages.map(img => (
+                          <div
+                            key={img.id}
+                            className={`bg-opt ${background.id === img.id ? 'selected' : ''}`}
+                            onClick={() => setBackground({ ...img, type: 'api' })}
+                            title={img.name}
+                            style={{ backgroundImage: `url(${img.url})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                          />
+                        ))}
+                        <div className="bg-opt upload" onClick={() => fileInputRef.current?.click()}>
+                          <span>📤</span><span>Upload</span>
+                          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUpload} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Nature photos from Picsum */}
+                  {bgCategory === 'photos' && (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>Random Photos from Picsum</span>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
+                          onClick={() => refreshBgImages('photos')}
+                          disabled={bgImagesLoading}
+                        >
+                          {bgImagesLoading ? '...' : '🔄 Refresh'}
+                        </button>
+                      </div>
+                      <div className="bg-grid">
+                        {natureApiImages.length === 0 && bgImagesLoading && (
+                          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '1rem', opacity: 0.7 }}>Loading photos...</div>
+                        )}
+                        {natureApiImages.map(img => (
+                          <div
+                            key={img.id}
+                            className={`bg-opt ${background.id === img.id ? 'selected' : ''}`}
+                            onClick={() => setBackground({ ...img, type: 'api' })}
+                            title={img.name}
+                            style={{ backgroundImage: `url(${img.url})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                          />
+                        ))}
+                        <div className="bg-opt upload" onClick={() => fileInputRef.current?.click()}>
+                          <span>📤</span><span>Upload</span>
+                          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUpload} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+
+                <section className="section">
+                  <h3 className="section-title"><span>✏️</span> Text Style</h3>
+                  <div className="custom-row"><span className="custom-label">Color</span><div className="colors">{TEXT_COLORS.map(c => <div key={c} className={`color-opt ${textColor === c ? 'selected' : ''}`} style={{ background: c }} onClick={() => setTextColor(c)} />)}<div className="color-opt custom"><input type="color" value={customColor} onChange={e => { setCustomColor(e.target.value); setTextColor(e.target.value); }} /></div></div></div>
+                  <div className="toggle-row" style={{ marginBottom: '0.5rem' }}><span className="toggle-label">Auto-fit Text</span><div className={`toggle ${autoFitText ? 'on' : ''}`} onClick={() => setAutoFitText(!autoFitText)} /></div>
+                  <div className="custom-row" style={{ opacity: autoFitText ? 0.5 : 1 }}><span className="custom-label">Arabic Size</span><div className="slider-wrap custom-ctrl"><input type="range" className="slider" min="16" max="72" value={arabicFontSize} onChange={e => setArabicFontSize(parseInt(e.target.value))} disabled={autoFitText} /><span className="slider-val">{arabicFontSize}px</span></div></div>
+                  <div className="custom-row" style={{ opacity: autoFitText ? 0.5 : 1 }}><span className="custom-label">{textType === 'tafsir' ? 'Tafsir Size' : 'English Size'}</span><div className="slider-wrap custom-ctrl"><input type="range" className="slider" min="10" max="42" value={secondaryFontSize} onChange={e => setSecondaryFontSize(parseInt(e.target.value))} disabled={autoFitText} /><span className="slider-val">{secondaryFontSize}px</span></div></div>
+                  <div className="custom-row"><span className="custom-label">Position</span><div className="pos-grid custom-ctrl">{['top', 'center', 'bottom'].map(p => <button key={p} className={`pos-btn ${textPosition === p ? 'selected' : ''}`} onClick={() => setTextPosition(p)}><div className="pos-dot" /></button>)}</div></div>
+                  <div className="toggle-row"><span className="toggle-label">Show Arabic</span><div className={`toggle ${showArabic ? 'on' : ''}`} onClick={() => setShowArabic(!showArabic)} /></div>
+                  <div className="toggle-row"><span className="toggle-label">Show {textType === 'tafsir' ? 'Tafsir' : 'Translation'}</span><div className={`toggle ${showSecondary ? 'on' : ''}`} onClick={() => setShowSecondary(!showSecondary)} /></div>
+                  <div className="toggle-row"><span className="toggle-label">Show Reference</span><div className={`toggle ${showReference ? 'on' : ''}`} onClick={() => setShowReference(!showReference)} /></div>
+                </section>
+
+                <section className="section">
+                  <h3 className="section-title"><span>🎨</span> Decorations</h3>
+                  <div className="deco-opts">{DECORATIONS.map(d => <button key={d.id} className={`deco-btn ${decoration === d.id ? 'selected' : ''}`} onClick={() => setDecoration(d.id)}>{d.name}</button>)}</div>
+                </section>
+              </aside>
+
+              <section className="preview-area">
+                <div className="preview-container">
+                  <div className="preview-header">
+                    <h2 className="preview-title">Live Preview</h2>
+                    <div className="format-tabs">{Object.entries(FORMATS).map(([k, v]) => <button key={k} className={`format-tab ${format === k ? 'active' : ''}`} onClick={() => setFormat(k)}>{v.label}</button>)}</div>
+                  </div>
+                  <div className="canvas-wrap"><canvas ref={canvasRef} className="canvas" /></div>
+                </div>
+                <div className="actions">
+                  {outputMode === 'image' ? (
+                    <button className="action-btn download" onClick={download}>
+                      <span>⬇️</span> Download HD
+                    </button>
+                  ) : (
+                    <button
+                      className="action-btn download"
+                      onClick={handleGenerateVideo}
+                      disabled={isGeneratingVideo}
+                      style={isGeneratingVideo ? { opacity: 0.7, cursor: 'not-allowed' } : {}}
+                    >
+                      {isGeneratingVideo ? (
+                        <>
+                          <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⏳</span>
+                          {' '}{videoStatus} {Math.round(videoProgress * 100)}%
+                        </>
+                      ) : (
+                        <>
+                          <span>🎥</span> Generate Video
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <button className="action-btn share" onClick={() => setShowShareModal(true)}><span>📤</span> Share</button>
+                  <button className="action-btn save" onClick={saveDesign}><span>💾</span> Save</button>
+                </div>
+              </section>
+            </main>
+          )}
+
+          {activeTab === 'saved' && (
+            <section className="gallery">
+              <div className="gallery-header"><h2 className="gallery-title">Saved Designs</h2><p className="gallery-sub">Click to edit</p></div>
+              {savedDesigns.length === 0 ? (
+                <div className="empty"><div className="empty-icon">💾</div><p className="empty-text">No saved designs yet.</p><button className="btn btn-primary" onClick={() => setActiveTab('create')}>Create First Design</button></div>
+              ) : (
+                <div className="gallery-grid">{savedDesigns.map(d => (
+                  <div key={d.id} className="gallery-item" onClick={() => loadDesign(d)}>
+                    <img src={d.thumb} alt="Saved design" className="gallery-img" />
+                    <div className="gallery-info"><div className="gallery-meta">
+                      <span>{surahInfo.find(s => s.number === d.surahNum)?.name} {d.startAyah}{d.endAyah !== d.startAyah ? `-${d.endAyah}` : ''}</span>
+                      <button onClick={e => deleteDesign(d.id, e)} style={{ background: 'rgba(255,0,0,0.2)', border: 'none', borderRadius: '4px', padding: '4px 8px', color: '#ff6b6b', cursor: 'pointer' }}>Delete</button>
+                    </div></div>
+                  </div>
+                ))}</div>
+              )}
+            </section>
+          )}
+
+          {showShareModal && (
+            <div className="modal-overlay" onClick={() => setShowShareModal(false)}>
+              <div className="modal" onClick={e => e.stopPropagation()}>
+                <div className="modal-header"><h3 className="modal-title">Share</h3><button className="modal-close" onClick={() => setShowShareModal(false)}>×</button></div>
+                <div className="social-btns">
+                  <button className="social-btn ig" onClick={() => { download(); alert('Downloaded! Share on Instagram.'); setShowShareModal(false); }}>📷 Instagram</button>
+                  <button className="social-btn fb" onClick={() => { window.open('https://www.facebook.com/sharer/sharer.php', '_blank'); setShowShareModal(false); }}>👤 Facebook</button>
+                  <button className="social-btn tw" onClick={() => { window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`"${translationText.substring(0, 100)}..." - ${referenceText}`)}`, '_blank'); setShowShareModal(false); }}>🐦 Twitter</button>
+                  <button className="social-btn wa" onClick={() => { window.open(`https://wa.me/?text=${encodeURIComponent(`"${translationText.substring(0, 200)}..." - ${referenceText}`)}`, '_blank'); setShowShareModal(false); }}>💬 WhatsApp</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Video Preview Modal */}
+          {showVideoPreview && videoPreviewUrl && (
+            <div className="modal-overlay" onClick={closeVideoPreview}>
+              <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '800px', width: '90%' }}>
+                <div className="modal-header">
+                  <h3 className="modal-title">Video Preview</h3>
+                  <button className="modal-close" onClick={closeVideoPreview}>×</button>
+                </div>
+                <div style={{ padding: '1rem' }}>
+                  <video
+                    src={videoPreviewUrl}
+                    controls
+                    autoPlay
+                    loop
+                    style={{
+                      width: '100%',
+                      maxHeight: '60vh',
+                      borderRadius: '8px',
+                      background: '#000'
+                    }}
+                  />
+                  <div style={{ marginTop: '1rem', display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+                    <button
+                      className="action-btn download"
+                      onClick={downloadVideo}
+                      style={{ flex: 'none' }}
+                    >
+                      <span>⬇️</span> Download Video
+                    </button>
+                    <button
+                      className="action-btn"
+                      onClick={() => {
+                        setShowVideoPreview(false);
+                        handleGenerateVideo();
+                      }}
+                      style={{ flex: 'none', background: 'rgba(255,255,255,0.1)' }}
+                    >
+                      <span>🔄</span> Regenerate
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
