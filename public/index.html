@@ -1486,7 +1486,6 @@
       const [textType, setTextType] = useState('english');
       const [decoration, setDecoration] = useState('none');
       const [format, setFormat] = useState('square');
-      const [showShareModal, setShowShareModal] = useState(false);
       const [savedDesigns, setSavedDesigns] = useState(() => storage.get('ayahCanvas_saved', []));
 
       // Video generation state
@@ -1498,7 +1497,6 @@
       const [videoProgress, setVideoProgress] = useState(0);
       const [videoStatus, setVideoStatus] = useState('');
       const [videoPreviewUrl, setVideoPreviewUrl] = useState(null);
-      const [showVideoPreview, setShowVideoPreview] = useState(false);
 
       const canvasRef = useRef(null);
       const fileInputRef = useRef(null);
@@ -1669,10 +1667,9 @@
             URL.revokeObjectURL(videoPreviewUrl);
           }
 
-          // Create preview URL and show preview modal
+          // Create preview URL for inline display
           const url = URL.createObjectURL(videoBlob);
           setVideoPreviewUrl(url);
-          setShowVideoPreview(true);
           setVideoStatus('Complete!');
         } catch (e) {
           console.error('Video generation failed:', e);
@@ -1692,11 +1689,67 @@
         link.click();
       }, [videoPreviewUrl, referenceText]);
 
-      // Close video preview and clean up
-      const closeVideoPreview = useCallback(() => {
-        setShowVideoPreview(false);
-        // Don't revoke URL yet - user might want to download
-      }, []);
+      // Clear video to start fresh
+      const clearVideo = useCallback(() => {
+        if (videoPreviewUrl) {
+          URL.revokeObjectURL(videoPreviewUrl);
+        }
+        setVideoPreviewUrl(null);
+        setVideoProgress(0);
+        setVideoStatus('');
+      }, [videoPreviewUrl]);
+
+      // Share file using Web Share API
+      const handleShare = useCallback(async () => {
+        try {
+          if (outputMode === 'image') {
+            // Convert canvas to blob
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+            const fileName = `ayah-${referenceText.replace(/\s+/g, '-')}.png`;
+            const file = new File([blob], fileName, { type: 'image/png' });
+
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title: 'Quran Ayah',
+                text: referenceText
+              });
+            } else {
+              // Fallback: download
+              download();
+              alert('Sharing not supported on this device. Image downloaded instead.');
+            }
+          } else if (outputMode === 'video' && videoPreviewUrl) {
+            // Fetch video blob from URL
+            const response = await fetch(videoPreviewUrl);
+            const blob = await response.blob();
+            const fileName = `ayah-${referenceText.replace(/\s+/g, '-')}.webm`;
+            const file = new File([blob], fileName, { type: 'video/webm' });
+
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title: 'Quran Ayah Video',
+                text: referenceText
+              });
+            } else {
+              // Fallback: download
+              downloadVideo();
+              alert('Sharing not supported on this device. Video downloaded instead.');
+            }
+          } else if (outputMode === 'video' && !videoPreviewUrl) {
+            alert('Please generate a video first before sharing.');
+          }
+        } catch (e) {
+          if (e.name !== 'AbortError') {
+            console.error('Share failed:', e);
+            alert('Failed to share. Try downloading instead.');
+          }
+        }
+      }, [outputMode, videoPreviewUrl, referenceText, download, downloadVideo]);
 
       const draw = useCallback(() => {
         const canvas = canvasRef.current;
@@ -1966,61 +2019,53 @@
                   )}
                 </section>
 
-                <section className="section">
-                  <h3 className="section-title"><span>🎬</span> Output Mode</h3>
-                  <div className="text-type-tabs">
-                    <button className={`text-type-tab ${outputMode === 'image' ? 'active' : ''}`} onClick={() => setOutputMode('image')}>
-                      🖼️ Image
-                    </button>
-                    <button className={`text-type-tab ${outputMode === 'video' ? 'active' : ''}`} onClick={() => setOutputMode('video')}>
-                      🎥 Video
-                    </button>
-                  </div>
+                {/* Video Options - only shown when video mode is selected */}
+                {outputMode === 'video' && (
+                  <section className="section">
+                    <h3 className="section-title"><span>🎬</span> Video Options</h3>
 
-                  {outputMode === 'video' && (
-                    <div style={{ marginTop: '0.75rem' }}>
-                      {/* Transition selector */}
+                    {/* Transition selector */}
+                    <div className="video-options-row">
                       <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', opacity: 0.8 }}>Transition Effect:</label>
                       <select
                         value={videoTransition}
                         onChange={e => setVideoTransition(e.target.value)}
-                        style={{ width: '100%', marginBottom: '0.75rem' }}
+                        style={{ width: '100%' }}
                       >
                         {TRANSITIONS.map(t => (
                           <option key={t.id} value={t.id}>{t.icon} {t.name}</option>
                         ))}
                       </select>
-
-                      {/* Audio toggle */}
-                      <div className="toggle-row" style={{ marginBottom: '0.75rem' }}>
-                        <span className="toggle-label">Include Audio Recitation</span>
-                        <div className={`toggle ${includeAudio ? 'on' : ''}`} onClick={() => setIncludeAudio(!includeAudio)} />
-                      </div>
-
-                      {/* Reciter selection */}
-                      {includeAudio && (
-                        <div style={{ marginBottom: '0.75rem' }}>
-                          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', opacity: 0.8 }}>Reciter:</label>
-                          <select
-                            value={selectedReciter.id}
-                            onChange={e => setSelectedReciter(RECITERS.find(r => r.id === parseInt(e.target.value)))}
-                            style={{ width: '100%' }}
-                          >
-                            {RECITERS.map(r => (
-                              <option key={r.id} value={r.id}>{r.name} ({r.arabicName}) - {r.style}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      {/* Info note */}
-                      <div className="tafsir-note" style={{ fontSize: '0.75rem' }}>
-                        Video will show each ayah with transitions. Duration is based on text length{includeAudio ? ' or audio length' : ''}.
-                        {endAyah - startAyah + 1 > 1 && ` (${endAyah - startAyah + 1} ayahs)`}
-                      </div>
                     </div>
-                  )}
-                </section>
+
+                    {/* Audio toggle */}
+                    <div className="toggle-row" style={{ marginBottom: '0.75rem' }}>
+                      <span className="toggle-label">Include Audio Recitation</span>
+                      <div className={`toggle ${includeAudio ? 'on' : ''}`} onClick={() => setIncludeAudio(!includeAudio)} />
+                    </div>
+
+                    {/* Reciter selection */}
+                    {includeAudio && (
+                      <div className="video-options-row">
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', opacity: 0.8 }}>Reciter:</label>
+                        <select
+                          value={selectedReciter.id}
+                          onChange={e => setSelectedReciter(RECITERS.find(r => r.id === parseInt(e.target.value)))}
+                          style={{ width: '100%' }}
+                        >
+                          {RECITERS.map(r => (
+                            <option key={r.id} value={r.id}>{r.name} ({r.arabicName}) - {r.style}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Info note */}
+                    <div className="tafsir-note" style={{ fontSize: '0.75rem' }}>
+                      Video will show each ayah with transitions. Duration is based on {includeAudio ? 'audio recitation length' : 'text length'}.
+                    </div>
+                  </section>
+                )}
 
                 <section className="section">
                   <h3 className="section-title"><span>🖼️</span> Background</h3>
@@ -2144,37 +2189,116 @@
 
               <section className="preview-area">
                 <div className="preview-container">
+                  {/* Output Mode Tabs */}
+                  <div className="output-tabs">
+                    <button
+                      className={`output-tab ${outputMode === 'image' ? 'active' : ''}`}
+                      onClick={() => { setOutputMode('image'); clearVideo(); }}
+                    >
+                      <span className="output-tab-icon">🖼️</span> Image
+                    </button>
+                    <button
+                      className={`output-tab ${outputMode === 'video' ? 'active' : ''}`}
+                      onClick={() => setOutputMode('video')}
+                    >
+                      <span className="output-tab-icon">🎬</span> Video
+                    </button>
+                  </div>
+
                   <div className="preview-header">
-                    <h2 className="preview-title">Live Preview</h2>
+                    <h2 className="preview-title">{outputMode === 'image' ? 'Image Preview' : 'Video Preview'}</h2>
                     <div className="format-tabs">{Object.entries(FORMATS).map(([k, v]) => <button key={k} className={`format-tab ${format === k ? 'active' : ''}`} onClick={() => setFormat(k)}>{v.label}</button>)}</div>
                   </div>
-                  <div className="canvas-wrap"><canvas ref={canvasRef} className="canvas" /></div>
+
+                  <div className="canvas-wrap">
+                    {/* Show video player if video is generated */}
+                    {outputMode === 'video' && videoPreviewUrl ? (
+                      <div className="video-preview-container">
+                        <video
+                          src={videoPreviewUrl}
+                          controls
+                          autoPlay
+                          loop
+                          className="video-preview-player"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <canvas ref={canvasRef} className="canvas" />
+
+                        {/* Video indicator overlay */}
+                        {outputMode === 'video' && !videoPreviewUrl && !isGeneratingVideo && (
+                          <div className="video-indicator-overlay">
+                            <div className="video-indicator-content">
+                              <div className="video-ayah-badge">
+                                <span className="count">{endAyah - startAyah + 1}</span>
+                                <span>ayah{endAyah - startAyah + 1 > 1 ? 's' : ''}</span>
+                              </div>
+                              <div className="pulse-dots">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Video generation progress overlay */}
+                        {outputMode === 'video' && isGeneratingVideo && (
+                          <div className="video-progress-overlay">
+                            <div className="video-progress-spinner"></div>
+                            <div className="video-progress-text">{videoStatus}</div>
+                            <div className="video-progress-bar">
+                              <div className="video-progress-fill" style={{ width: `${videoProgress * 100}%` }}></div>
+                            </div>
+                            <div className="video-progress-text">{Math.round(videoProgress * 100)}%</div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
+
+                {/* Action Buttons */}
                 <div className="actions">
                   {outputMode === 'image' ? (
-                    <button className="action-btn download" onClick={download}>
-                      <span>⬇️</span> Download HD
-                    </button>
+                    <>
+                      <button className="action-btn download" onClick={download}>
+                        <span>⬇️</span> Download HD
+                      </button>
+                      <button className="action-btn share" onClick={handleShare}>
+                        <span>📤</span> Share
+                      </button>
+                    </>
+                  ) : videoPreviewUrl ? (
+                    <>
+                      <button className="action-btn download" onClick={downloadVideo}>
+                        <span>⬇️</span> Download
+                      </button>
+                      <button className="action-btn share" onClick={handleShare}>
+                        <span>📤</span> Share
+                      </button>
+                      <button className="action-btn new-video" onClick={clearVideo}>
+                        <span>🔄</span> New Video
+                      </button>
+                    </>
                   ) : (
                     <button
-                      className="action-btn download"
+                      className="action-btn generate"
                       onClick={handleGenerateVideo}
                       disabled={isGeneratingVideo}
-                      style={isGeneratingVideo ? { opacity: 0.7, cursor: 'not-allowed' } : {}}
                     >
                       {isGeneratingVideo ? (
                         <>
-                          <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⏳</span>
-                          {' '}{videoStatus} {Math.round(videoProgress * 100)}%
+                          <span>⏳</span> Generating...
                         </>
                       ) : (
                         <>
-                          <span>🎥</span> Generate Video
+                          <span>🎬</span> Generate Video
                         </>
                       )}
                     </button>
                   )}
-                  <button className="action-btn share" onClick={() => setShowShareModal(true)}><span>📤</span> Share</button>
                   <button className="action-btn save" onClick={saveDesign}><span>💾</span> Save</button>
                 </div>
               </section>
@@ -2200,64 +2324,7 @@
             </section>
           )}
 
-          {showShareModal && (
-            <div className="modal-overlay" onClick={() => setShowShareModal(false)}>
-              <div className="modal" onClick={e => e.stopPropagation()}>
-                <div className="modal-header"><h3 className="modal-title">Share</h3><button className="modal-close" onClick={() => setShowShareModal(false)}>×</button></div>
-                <div className="social-btns">
-                  <button className="social-btn ig" onClick={() => { download(); alert('Downloaded! Share on Instagram.'); setShowShareModal(false); }}>📷 Instagram</button>
-                  <button className="social-btn fb" onClick={() => { window.open('https://www.facebook.com/sharer/sharer.php', '_blank'); setShowShareModal(false); }}>👤 Facebook</button>
-                  <button className="social-btn tw" onClick={() => { window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`"${translationText.substring(0, 100)}..." - ${referenceText}`)}`, '_blank'); setShowShareModal(false); }}>🐦 Twitter</button>
-                  <button className="social-btn wa" onClick={() => { window.open(`https://wa.me/?text=${encodeURIComponent(`"${translationText.substring(0, 200)}..." - ${referenceText}`)}`, '_blank'); setShowShareModal(false); }}>💬 WhatsApp</button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Video Preview Modal */}
-          {showVideoPreview && videoPreviewUrl && (
-            <div className="modal-overlay" onClick={closeVideoPreview}>
-              <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '800px', width: '90%' }}>
-                <div className="modal-header">
-                  <h3 className="modal-title">Video Preview</h3>
-                  <button className="modal-close" onClick={closeVideoPreview}>×</button>
-                </div>
-                <div style={{ padding: '1rem' }}>
-                  <video
-                    src={videoPreviewUrl}
-                    controls
-                    autoPlay
-                    loop
-                    style={{
-                      width: '100%',
-                      maxHeight: '60vh',
-                      borderRadius: '8px',
-                      background: '#000'
-                    }}
-                  />
-                  <div style={{ marginTop: '1rem', display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
-                    <button
-                      className="action-btn download"
-                      onClick={downloadVideo}
-                      style={{ flex: 'none' }}
-                    >
-                      <span>⬇️</span> Download Video
-                    </button>
-                    <button
-                      className="action-btn"
-                      onClick={() => {
-                        setShowVideoPreview(false);
-                        handleGenerateVideo();
-                      }}
-                      style={{ flex: 'none', background: 'rgba(255,255,255,0.1)' }}
-                    >
-                      <span>🔄</span> Regenerate
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Modals removed - share now uses Web Share API, video shows inline */}
         </div>
       );
     }

@@ -901,6 +901,225 @@ select option {
   opacity: 0.5;
 }
 
+/* Output Mode Tabs */
+.output-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 4px;
+}
+
+.output-tab {
+  flex: 1;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.output-tab:hover {
+  color: var(--light);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.output-tab.active {
+  background: linear-gradient(135deg, var(--gold), #B8941F);
+  color: var(--dark);
+}
+
+.output-tab-icon {
+  font-size: 1.1rem;
+}
+
+/* Video Indicator Overlay */
+.video-indicator-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.video-indicator-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 2rem;
+  background: rgba(26, 26, 46, 0.95);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+}
+
+.video-ayah-badge {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--gold);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.video-ayah-badge .count {
+  font-size: 1.5rem;
+}
+
+/* Pulse Animation Dots */
+.pulse-dots {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pulse-dots span {
+  width: 10px;
+  height: 10px;
+  background: var(--gold);
+  border-radius: 50%;
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+.pulse-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.pulse-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.pulse-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes pulse-dot {
+  0%, 60%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  30% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+}
+
+/* Video Preview Player */
+.video-preview-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.video-preview-player {
+  max-width: 100%;
+  max-height: 500px;
+  border-radius: 8px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.25);
+  background: #000;
+}
+
+/* Video Progress */
+.video-progress-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
+  gap: 1rem;
+}
+
+.video-progress-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(201, 162, 39, 0.2);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.video-progress-text {
+  font-size: 1rem;
+  color: var(--gold);
+  font-weight: 500;
+}
+
+.video-progress-bar {
+  width: 200px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.video-progress-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+/* Action Button Variants */
+.action-btn.generate {
+  background: linear-gradient(135deg, #4CAF50, #45a049);
+  color: white;
+}
+
+.action-btn.new-video {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--light);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Video Options Panel */
+.video-options {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.video-options-row {
+  margin-bottom: 0.75rem;
+}
+
+.video-options-row:last-child {
+  margin-bottom: 0;
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
   .main {
