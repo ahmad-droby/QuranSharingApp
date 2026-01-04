@@ -702,10 +702,11 @@
     // VIDEO GENERATION SERVICE
     // ============================================================================
 
-    // CORS proxy for audio when running from file://
+    // CORS proxies for audio - these support binary/audio files
     const CORS_PROXIES = [
-      'https://corsproxy.io/?',
-      'https://api.allorigins.win/raw?url=',
+      'https://corsproxy.org/?',
+      'https://thingproxy.freeboard.io/fetch/',
+      'https://api.codetabs.com/v1/proxy?quest=',
     ];
 
     // Preload audio for an ayah
@@ -733,8 +734,13 @@
           const response = await fetch(proxyUrl);
           if (response.ok) {
             const arrayBuffer = await response.arrayBuffer();
-            console.log(`Audio fetched via proxy: ${arrayBuffer.byteLength} bytes`);
-            return arrayBuffer;
+            // Validate it's actually audio (MP3 files are typically > 1KB)
+            if (arrayBuffer.byteLength > 1000) {
+              console.log(`Audio fetched via proxy: ${arrayBuffer.byteLength} bytes`);
+              return arrayBuffer;
+            } else {
+              console.log(`Proxy returned invalid data (${arrayBuffer.byteLength} bytes), trying next...`);
+            }
           }
         } catch (e) {
           console.log(`Proxy failed: ${proxy.split('?')[0]}`);
